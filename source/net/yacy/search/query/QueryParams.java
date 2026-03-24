@@ -632,6 +632,9 @@ public final class QueryParams {
         final SolrQuery params = getBasicParams(getFacets, filterQueries);
         int rankingProfile = this.ranking.coeff_date == RankingProfile.COEFF_MAX ? 1 : (this.modifier.sitehash != null || this.modifier.sitehost != null) ? 2 : 0;
         params.setQuery(this.queryGoal.collectionTextQuery().toString());
+        if (this.queryGoal.getIncludeSize() > 1) {
+            params.setParam(DisMaxParams.MM, "1");
+        }
         Ranking actRanking = indexSegment.fulltext().getDefaultConfiguration().getRanking(rankingProfile); // for a by-date ranking select different ranking profile
 
         String fq = actRanking.getFilterQuery();
