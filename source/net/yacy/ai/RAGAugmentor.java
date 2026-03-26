@@ -45,7 +45,6 @@ import org.json.JSONObject;
 import net.yacy.cora.document.analysis.Classification;
 import net.yacy.cora.document.id.DigestURL;
 import net.yacy.cora.document.id.MultiProtocolURL;
-import net.yacy.cora.federate.solr.SolrType;
 import net.yacy.cora.federate.solr.connector.EmbeddedSolrConnector;
 import net.yacy.cora.federate.yacy.CacheStrategy;
 import net.yacy.cora.lod.vocabulary.Tagging;
@@ -107,47 +106,10 @@ public final class RAGAugmentor {
     public static JSONArray searchResults(String query, int count, final boolean includeSnippet, final Set<String> boostTerms) {
         final JSONArray results = new JSONArray();
         if (query == null || query.length() == 0 || count == 0) return results;
-        Switchboard sb = Switchboard.getSwitchboard();
-        EmbeddedSolrConnector connector = sb.index.fulltext().getDefaultEmbeddedConnector();
-        final SolrQuery params = new SolrQuery();
-        // Base query and parser setup.
-        params.setQuery(query);
-        params.set("defType", "edismax");
-        // Static field boosts favor title/headings over body text.
-        params.set("qf",
-            CollectionSchema.title.getSolrFieldName() + "^3 " +
-            CollectionSchema.text_t.getSolrFieldName() + "^1 " +
-            CollectionSchema.sku.getSolrFieldName() + "^0.5 " +
-            CollectionSchema.h1_txt.getSolrFieldName() + "^2");
-        params.set("pf",
-            CollectionSchema.title.getSolrFieldName() + "^5 " +
-            CollectionSchema.text_t.getSolrFieldName() + "^2");
-        final List<String> bqParts = new ArrayList<>();
-        if (boostTerms != null && !boostTerms.isEmpty()) {
-            // Apply weak boosts to overlap terms, keeping lexical query dominant.
-            for (String term : boostTerms) {
-                if (term == null || term.isEmpty()) continue;
-                bqParts.add(CollectionSchema.title.getSolrFieldName() + ":" + term + "^0.5");
-                bqParts.add(CollectionSchema.h1_txt.getSolrFieldName() + ":" + term + "^0.4");
-                bqParts.add(CollectionSchema.text_t.getSolrFieldName() + ":" + term + "^0.2");
-            }
-        }
-        // Slightly prefer archive/container file extensions in this use case.
-        bqParts.add("(" + CollectionSchema.url_file_ext_s.getSolrFieldName() + ":(zip rar 7z tar gz bz2 xz tgz))^0.1");
-        params.set("bq", String.join(" ", bqParts));
-        params.setRows(count);
-        params.setStart(0);
-        params.setFacet(false);
-        params.clearSorts();
-        // Fetch only fields needed for tool / markdown rendering.
-        params.setFields(
-            CollectionSchema.sku.getSolrFieldName(), CollectionSchema.title.getSolrFieldName(), CollectionSchema.text_t.getSolrFieldName(),
-            CollectionSchema.description_txt.getSolrFieldName(), CollectionSchema.keywords.getSolrFieldName(), CollectionSchema.synonyms_sxt.getSolrFieldName(),
-            CollectionSchema.h1_txt.getSolrFieldName(), CollectionSchema.h2_txt.getSolrFieldName(), CollectionSchema.h3_txt.getSolrFieldName(),
-            CollectionSchema.h4_txt.getSolrFieldName(), CollectionSchema.h5_txt.getSolrFieldName(), CollectionSchema.h6_txt.getSolrFieldName()
-        );
-        params.setIncludeScore(true);
-        params.set("df", CollectionSchema.text_t.getSolrFieldName());
+        final Switchboard sb = Switchboard.getSwitchboard();
+        final EmbeddedSolrConnector connector = sb.index.fulltext().getDefaultEmbeddedConnector();
+        final QueryParams theQuery = buildTextQueryParams(query, count, QueryParams.Searchdom.LOCAL);
+        final SolrQuery params = theQuery.solrQuery(Classification.ContentDomain.TEXT, false, false, false);
 
         try {
             final SolrDocumentList sdl = connector.getDocumentListByParams(params);
@@ -158,11 +120,11 @@ public final class RAGAugmentor {
                     final JSONObject result = new JSONObject(true);
                     String url = (String) doc.getFieldValue(CollectionSchema.sku.getSolrFieldName());
                     result.put("url", url == null ? "" : url.trim());
-                    String title = getOneString(doc, CollectionSchema.title);
+                    String title = firstFieldString(doc.getFieldValue(CollectionSchema.title.getSolrFieldName()));
                     result.put("title", title == null ? "" : title.trim());
                     if (includeSnippet) {
                         // Use indexed text body as quick snippet source.
-                        String text = (String) doc.getFieldValue(CollectionSchema.text_t.getSolrFieldName());
+                        String text = firstFieldString(doc.getFieldValue(CollectionSchema.text_t.getSolrFieldName()));
                         result.put("text", limitSnippet(text == null ? "" : text.trim(), 2000));
                     }
                     results.put(result);
@@ -250,44 +212,7 @@ public final class RAGAugmentor {
         final JSONArray results = new JSONArray();
         if (query == null || query.length() == 0 || count == 0) return results;
         final Switchboard sb = Switchboard.getSwitchboard();
-        final RankingProfile ranking = sb.getRanking();
-        final int timezoneOffset = 0;
-        final QueryModifier modifier = new QueryModifier(timezoneOffset);
-        // Parse modifiers and normalize effective query string.
-        String querystring = modifier.parse(query);
-        if (querystring.length() == 0) querystring = query == null ? "" : query.trim();
-        if (querystring.length() == 0) return results;
-        final QueryGoal qg = new QueryGoal(querystring);
-        // Construct a standard text-domain global query.
-        final QueryParams theQuery = new QueryParams(
-                qg,
-                modifier,
-                0,
-                "",
-                Classification.ContentDomain.TEXT,
-                "",
-                timezoneOffset,
-                new HashSet<Tagging.Metatag>(),
-                CacheStrategy.IFFRESH,
-                count,
-                0,
-                ".*",
-                null,
-                null,
-                QueryParams.Searchdom.GLOBAL,
-                null,
-                true,
-                DigestURL.hosthashess(sb.getConfig("search.excludehosth", "")),
-                MultiProtocolURL.TLD_any_zone_filter,
-                null,
-                false,
-                sb.index,
-                ranking,
-                ClientIdentification.yacyIntranetCrawlerAgent.userAgent(),
-                0.0d,
-                0.0d,
-                0.0d,
-                sb.getConfigSet("search.navigation"));
+        final QueryParams theQuery = buildTextQueryParams(query, count, QueryParams.Searchdom.GLOBAL);
         final SearchEvent theSearch = SearchEventCache.getEvent(
                 theQuery,
                 sb.peers,
@@ -329,6 +254,55 @@ public final class RAGAugmentor {
             }
         }
         return results;
+    }
+
+    /**
+     * Build a standard YaCy text query using the shared query parser and ranking
+     * configuration. This gives local and global RAG retrieval the same Solr query
+     * semantics as the normal search stack.
+     *
+     * @param query raw query string
+     * @param count maximum number of results to retrieve
+     * @param searchdom local or global search scope
+     * @return shared query parameters ready for Solr/event execution
+     */
+    private static QueryParams buildTextQueryParams(final String query, final int count, final QueryParams.Searchdom searchdom) {
+        final Switchboard sb = Switchboard.getSwitchboard();
+        final RankingProfile ranking = sb.getRanking();
+        final int timezoneOffset = 0;
+        final QueryModifier modifier = new QueryModifier(timezoneOffset);
+        String querystring = modifier.parse(query);
+        if (querystring.length() == 0) querystring = query == null ? "" : query.trim();
+        final QueryGoal qg = new QueryGoal(querystring);
+        return new QueryParams(
+                qg,
+                modifier,
+                0,
+                "",
+                Classification.ContentDomain.TEXT,
+                "",
+                timezoneOffset,
+                new HashSet<Tagging.Metatag>(),
+                CacheStrategy.IFFRESH,
+                count,
+                0,
+                ".*",
+                null,
+                null,
+                searchdom,
+                null,
+                true,
+                DigestURL.hosthashess(sb.getConfig("search.excludehosth", "")),
+                MultiProtocolURL.TLD_any_zone_filter,
+                null,
+                false,
+                sb.index,
+                ranking,
+                ClientIdentification.yacyIntranetCrawlerAgent.userAgent(),
+                0.0d,
+                0.0d,
+                0.0d,
+                sb.getConfigSet("search.navigation"));
     }
 
     /**
@@ -487,24 +461,6 @@ public final class RAGAugmentor {
             }
         }
         search.resortCachedResults();
-    }
-
-    /**
-     * Reads a single string value from a (possibly multivalued) Solr field.
-     *
-     * @param doc source Solr document
-     * @param field schema field descriptor
-     * @return first string value or empty string
-     */
-    private static String getOneString(SolrDocument doc, CollectionSchema field) {
-        assert field.isMultiValued();
-        assert field.getType() == SolrType.string || field.getType() == SolrType.text_general;
-        Object r = doc.getFieldValue(field.getSolrFieldName());
-        if (r == null) return "";
-        if (r instanceof ArrayList) {
-            return (String) ((ArrayList<?>) r).get(0);
-        }
-        return r.toString();
     }
 
     /**

@@ -88,6 +88,14 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
      */
     private static final Pattern p4 =
             Pattern.compile("[^\\p{L}\\p{N}]");
+    private static final Pattern MARKDOWN_LINK_PATTERN =
+            Pattern.compile("\\[(.+?)\\]\\((.+?)\\)");
+    private static final Pattern MARKDOWN_IMAGE_PATTERN =
+            Pattern.compile("!\\[(.*?)\\]\\((.+?)\\)");
+    private static final Pattern MARKDOWN_EMPHASIS_PATTERN =
+            Pattern.compile("(\\*\\*|__|~~|`|\\*|_)");
+    private static final Pattern MARKDOWN_PREFIX_PATTERN =
+            Pattern.compile("(?m)^\\s{0,3}(#{1,6}\\s+|>\\s+|[-*+]\\s+|\\d+\\.\\s+)");
 
     public static class Cache {
         private final ARC<String, String> cache;
@@ -147,7 +155,10 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
     /** URL hash of this snippet */
     private byte[] urlhash;
     
-    /** The raw (unmodified) line from source ( use getDescriptionLine() to get the html encoded version for display) */
+    /** The raw line from source, kept for RAG and non-display consumers */
+    private String rawline;
+
+    /** Display-oriented snippet line with markdown formatting stripped */
     private String line;
     
     /** Set to true when query words are already marked in the input text */
@@ -406,7 +417,8 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             final String errortext,
             final long beginTime) {
         this.urlhash = url.hash();
-        this.line = sanitizeSnippetLine(line);
+        this.rawline = sanitizeSnippetLine(line);
+        this.line = stripMarkdownForDisplay(this.rawline);
         this.isMarked = isMarked;
         this.resultStatus = errorCode;
         this.error = errortext;
@@ -461,6 +473,28 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         return sanitized.toString().replaceAll("\\s{2,}", " ").trim();
     }
 
+    /**
+     * Strip markdown syntax from snippet text intended for browser display while
+     * preserving readable content. The raw snippet remains available through
+     * getLineRaw() for RAG consumers.
+     * @param line raw snippet text
+     * @return display-friendly plain text
+     */
+    static String stripMarkdownForDisplay(final String line) {
+        if (line == null || line.isEmpty()) {
+            return line;
+        }
+        String sanitized = line;
+        sanitized = sanitized.replace("```", " ");
+        sanitized = MARKDOWN_IMAGE_PATTERN.matcher(sanitized).replaceAll("$1");
+        sanitized = MARKDOWN_LINK_PATTERN.matcher(sanitized).replaceAll("$1");
+        sanitized = MARKDOWN_PREFIX_PATTERN.matcher(sanitized).replaceAll("");
+        sanitized = MARKDOWN_EMPHASIS_PATTERN.matcher(sanitized).replaceAll("");
+        sanitized = sanitized.replaceAll("\\\\([\\\\`*_{}\\[\\]()#+\\-.!>~|])", "$1");
+        sanitized = sanitized.replaceAll("\\s{2,}", " ").trim();
+        return sanitized;
+    }
+
     private static boolean isLikelyJavaScriptBlock(final String blockContent) {
         if (blockContent == null) {
             return false;
@@ -488,7 +522,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
      * @return true when a snippet text is available for the document corresponding to this.urlhash
      */
     public boolean exists() {
-        return this.line != null;
+        return this.rawline != null;
     }
 
     /**
@@ -502,7 +536,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
      * @return the raw snippet text line, with query words eventually already marked
      */
     public String getLineRaw() {
-        return (this.line == null) ? "" : this.line;
+        return (this.rawline == null) ? "" : this.rawline;
     }
 
     public String getError() {
@@ -567,7 +601,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         if (descriptionline != null) return descriptionline;
         if (this.isMarked) {
             // html encode source, keep <b>..</b>
-            descriptionline = CharacterCoding.unicode2html(this.getLineRaw(), false).replaceAll("&lt;b&gt;(.+?)&lt;/b&gt;", "<b>$1</b>");
+            descriptionline = CharacterCoding.unicode2html(this.line == null ? "" : this.line, false).replaceAll("&lt;b&gt;(.+?)&lt;/b&gt;", "<b>$1</b>");
         } else {
             descriptionline = this.getLineMarked(queryGoal);
         }
