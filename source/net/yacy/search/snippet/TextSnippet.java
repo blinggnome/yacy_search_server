@@ -174,7 +174,18 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             final ResultClass errorCode,
             final String errortext) {
     	long beginTime = System.currentTimeMillis();
-        init(url, line, isMarked, errorCode, errortext, beginTime);
+        init(url, line, line, isMarked, errorCode, errortext, beginTime);
+    }
+
+    public TextSnippet(
+            final DigestURL url,
+            final String rawLine,
+            final String displayLine,
+            final boolean isMarked,
+            final ResultClass errorCode,
+            final String errortext) {
+        long beginTime = System.currentTimeMillis();
+        init(url, rawLine, displayLine, isMarked, errorCode, errortext, beginTime);
     }
 
     public TextSnippet(
@@ -191,7 +202,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         
         final DigestURL url = row.url();
         if (queryTerms.isEmpty()) {
-            init(url, null, false, ResultClass.ERROR_NO_TERM_GIVEN, "no query terms given", beginTime);
+            init(url, null, null, false, ResultClass.ERROR_NO_TERM_GIVEN, "no query terms given", beginTime);
             return;
         }
 
@@ -204,7 +215,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         	final String snippetLine = snippetsCache.get(wordhashes, urlHash);
         	if (snippetLine != null) {
         		// found the snippet
-        		init(url, snippetLine, false, source, null, beginTime);
+        		init(url, snippetLine, snippetLine, false, source, null, beginTime);
         		return;
         	}
         } else {
@@ -261,7 +272,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             }
             if (sentences == null) {
                 // not found the snippet
-                init(url, null, false, ResultClass.SOURCE_METADATA, null, beginTime);
+                init(url, null, null, false, ResultClass.SOURCE_METADATA, null, beginTime);
                 return;
             }
 
@@ -271,7 +282,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
                     textline = tsr.getSnippet();
                     remainingTerms = tsr.getRemainingTerms();
                 } catch (final UnsupportedOperationException e) {
-                    init(url, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
+                    init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
                     return;
                 }
             }
@@ -323,7 +334,8 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
                     }
                 }
             }
-            init(url, textline.length() > 0 ? textline : this.line, false, ResultClass.SOURCE_METADATA, null, beginTime);
+            final String fallbackLine = textline.length() > 0 ? textline : this.line;
+            init(url, fallbackLine, fallbackLine, false, ResultClass.SOURCE_METADATA, null, beginTime);
             return;
         }
         sentences = null; // we don't need this here any more
@@ -339,12 +351,12 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         if (response == null) {
             // in case that we did not get any result we can still return a success when we are not allowed to go online
             if (cacheStrategy == null || cacheStrategy.mustBeOffline()) {
-                init(url, null, false, ResultClass.ERROR_SOURCE_LOADING, "omitted network load (not allowed), no cache entry", beginTime);
+                init(url, null, null, false, ResultClass.ERROR_SOURCE_LOADING, "omitted network load (not allowed), no cache entry", beginTime);
                 return;
             }
 
             // if it is still not available, report an error
-            init(url, null, false, ResultClass.ERROR_RESOURCE_LOADING, "error loading resource from net, no cache entry", beginTime);
+            init(url, null, null, false, ResultClass.ERROR_RESOURCE_LOADING, "error loading resource from net, no cache entry", beginTime);
             return;
         }
 
@@ -359,11 +371,11 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         try {
             document = Document.mergeDocuments(response.url(), response.getMimeType(), response.parse());
         } catch (final Parser.Failure e) {
-            init(url, null, false, ResultClass.ERROR_PARSER_FAILED, e.getMessage(), beginTime); // cannot be parsed
+            init(url, null, null, false, ResultClass.ERROR_PARSER_FAILED, e.getMessage(), beginTime); // cannot be parsed
             return;
         }
         if (document == null) {
-            init(url, null, false, ResultClass.ERROR_PARSER_FAILED, "parser error/failed", beginTime); // cannot be parsed
+            init(url, null, null, false, ResultClass.ERROR_PARSER_FAILED, "parser error/failed", beginTime); // cannot be parsed
             return;
         }
 
@@ -372,7 +384,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         document.close();
 
         if (!sentences.hasNext()) {
-            init(url, null, false, ResultClass.ERROR_PARSER_NO_LINES, "parser returned no sentences", beginTime);
+            init(url, null, null, false, ResultClass.ERROR_PARSER_NO_LINES, "parser returned no sentences", beginTime);
             return;
         }
 
@@ -381,13 +393,13 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             textline = tsr.getSnippet();
             remainingTerms =  tsr.getRemainingTerms();
         } catch (final UnsupportedOperationException e) {
-            init(url, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
+            init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
             return;
         }
         sentences = null;
 
         if (textline == null || !remainingTerms.isEmpty()) {
-            init(url, null, false, ResultClass.ERROR_NO_MATCH, "no matching snippet found", beginTime);
+            init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "no matching snippet found", beginTime);
             return;
         }
         if (textline.length() > snippetMaxLength) textline = textline.substring(0, snippetMaxLength);
@@ -396,7 +408,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         if(wordhashes != null) {
         	snippetsCache.put(wordhashes, urlHash, textline);
         }
-        init(url, textline, false, source, null, beginTime);
+        init(url, textline, textline, false, source, null, beginTime);
     }
 
     /**
@@ -411,14 +423,16 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
      */
     private void init(
             final DigestURL url,
-            final String line,
+            final String rawLine,
+            final String displayLine,
             final boolean isMarked,
             final ResultClass errorCode,
             final String errortext,
             final long beginTime) {
         this.urlhash = url.hash();
-        this.rawline = sanitizeSnippetLine(line);
-        this.line = stripMarkdownForDisplay(this.rawline);
+        this.rawline = sanitizeSnippetLine(rawLine);
+        final String sanitizedDisplay = sanitizeSnippetLine(displayLine);
+        this.line = stripMarkdownForDisplay(sanitizedDisplay == null ? this.rawline : sanitizedDisplay);
         this.isMarked = isMarked;
         this.resultStatus = errorCode;
         this.error = errortext;

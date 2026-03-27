@@ -1895,9 +1895,8 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                         false,
                         180,
                         false);
-                final String solrsnippetline = solrsnippet.descriptionline(this.getQuery().getQueryGoal());
-                final String yacysnippetline = yacysnippet.descriptionline(this.getQuery().getQueryGoal());
-                final URIMetadataNode re = node.makeResultEntry(this.query.getSegment(), this.peers, solrsnippetline.length() >  yacysnippetline.length() ? solrsnippet : yacysnippet);
+                final TextSnippet selectedSnippet = solrsnippet.getLineRaw().length() > yacysnippet.getLineRaw().length() ? solrsnippet : yacysnippet;
+                final URIMetadataNode re = node.makeResultEntry(this.query.getSegment(), this.peers, maximizeSnippet(node, selectedSnippet));
                 addResult(re, localEntryElement.getWeight());
                 success = true;
             } else {
@@ -2022,7 +2021,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                     ((this.query.constraint != null) && (this.query.constraint.get(Tokenizer.flag_cat_indexof))),
                     SearchEvent.SNIPPET_MAX_LENGTH,
                     !this.query.isLocal());
-            return page.makeResultEntry(this.query.getSegment(), this.peers, snippet); // result without snippet
+            return page.makeResultEntry(this.query.getSegment(), this.peers, maximizeSnippet(page, snippet)); // result without snippet
         }
 
         // load snippet
@@ -2043,7 +2042,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
 
             if (!snippet.getErrorCode().fail()) {
                 // we loaded the file and found the snippet
-                return page.makeResultEntry(this.query.getSegment(), this.peers, snippet); // result with snippet attached
+                return page.makeResultEntry(this.query.getSegment(), this.peers, maximizeSnippet(page, snippet)); // result with snippet attached
             } else if (cacheStrategy.mustBeOffline()) {
                 // we did not demand online loading, therefore a failure does not mean that the missing snippet causes a rejection of this result
                 // this may happen during a remote search, because snippet loading is omitted to retrieve results faster
@@ -2081,6 +2080,23 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
             }
         }
         return page.makeResultEntry(this.query.getSegment(), this.peers, null); // result without snippet
+    }
+
+    private static TextSnippet maximizeSnippet(final URIMetadataNode page, final TextSnippet snippet) {
+        if (page == null || snippet == null || !snippet.exists()) {
+            return snippet;
+        }
+        String rawText = page.getText();
+        if (rawText == null || rawText.isEmpty()) {
+            final ArrayList<String> descriptions = page.getDescription();
+            if (descriptions != null && !descriptions.isEmpty()) {
+                rawText = descriptions.get(0);
+            }
+        }
+        if (rawText == null || rawText.isEmpty()) {
+            return snippet;
+        }
+        return new TextSnippet(page.url(), rawText, snippet.getLineRaw(), snippet.isMarked(), snippet.getErrorCode(), snippet.getError());
     }
 
     /**

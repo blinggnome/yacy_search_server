@@ -22,22 +22,12 @@ package net.yacy.ai;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.SolrDocumentList;
-import org.apache.solr.common.SolrException;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -45,7 +35,6 @@ import org.json.JSONObject;
 import net.yacy.cora.document.analysis.Classification;
 import net.yacy.cora.document.id.DigestURL;
 import net.yacy.cora.document.id.MultiProtocolURL;
-import net.yacy.cora.federate.solr.connector.EmbeddedSolrConnector;
 import net.yacy.cora.federate.yacy.CacheStrategy;
 import net.yacy.cora.lod.vocabulary.Tagging;
 import net.yacy.cora.protocol.ClientIdentification;
@@ -83,7 +72,7 @@ public final class RAGAugmentor {
     private RAGAugmentor() {}
 
     /**
-     * Executes local index search with default boost terms.
+     * Executes local index search.
      *
      * @param query query string
      * @param count max number of results
@@ -91,50 +80,8 @@ public final class RAGAugmentor {
      * @return JSON array with {@code url,title[,text]} entries
      */
     public static JSONArray searchResults(String query, int count, final boolean includeSnippet) {
-        return searchResults(query, count, includeSnippet, new LinkedHashSet<>());
-    }
-
-    /**
-     * Executes local Solr search with optional dynamic boost terms.
-     *
-     * @param query query string
-     * @param count max number of results
-     * @param includeSnippet include text snippets from indexed text field
-     * @param boostTerms optional overlap terms used to bias ranking
-     * @return JSON array with normalized search result objects
-     */
-    public static JSONArray searchResults(String query, int count, final boolean includeSnippet, final Set<String> boostTerms) {
-        final JSONArray results = new JSONArray();
-        if (query == null || query.length() == 0 || count == 0) return results;
-        final Switchboard sb = Switchboard.getSwitchboard();
-        final EmbeddedSolrConnector connector = sb.index.fulltext().getDefaultEmbeddedConnector();
         final QueryParams theQuery = buildTextQueryParams(query, count, QueryParams.Searchdom.LOCAL);
-        final SolrQuery params = theQuery.solrQuery(Classification.ContentDomain.TEXT, false, false, false);
-
-        try {
-            final SolrDocumentList sdl = connector.getDocumentListByParams(params);
-            Iterator<SolrDocument> i = sdl.iterator();
-            while (i.hasNext()) {
-                try {
-                    SolrDocument doc = i.next();
-                    final JSONObject result = new JSONObject(true);
-                    String url = (String) doc.getFieldValue(CollectionSchema.sku.getSolrFieldName());
-                    result.put("url", url == null ? "" : url.trim());
-                    String title = firstFieldString(doc.getFieldValue(CollectionSchema.title.getSolrFieldName()));
-                    result.put("title", title == null ? "" : title.trim());
-                    if (includeSnippet) {
-                        // Use indexed text body as quick snippet source.
-                        String text = firstFieldString(doc.getFieldValue(CollectionSchema.text_t.getSolrFieldName()));
-                        result.put("text", limitSnippet(text == null ? "" : text.trim(), 2000));
-                    }
-                    results.put(result);
-                } catch (JSONException e) {
-                }
-            }
-            return results;
-        } catch (SolrException | IOException e) {
-            return results;
-        }
+        return searchResults(theQuery, count, includeSnippet);
     }
 
     /**
@@ -146,27 +93,11 @@ public final class RAGAugmentor {
      * @return markdown context block
      */
     public static String searchResultsAsMarkdown(String query, int count, boolean global) {
-        return searchResultsAsMarkdown(query, count, global, new LinkedHashSet<>());
-    }
-
-    /**
-     * Renders search results as compact markdown and applies snippet ranking to
-     * reduce noise.
-     *
-     * @param query query string
-     * @param count max number of search rows
-     * @param global when true, use global YaCy search; otherwise local Solr
-     * @param boostTerms optional local-search boost terms
-     * @return markdown formatted context used in downstream prompt augmentation
-     */
-    public static String searchResultsAsMarkdown(String query, int count, boolean global, final Set<String> boostTerms) {
         final long searchStart = System.currentTimeMillis();
-        JSONArray searchResults = global ? searchResultsGlobal(query, count, true) : searchResults(query, count, true, boostTerms);
+        JSONArray searchResults = global ? searchResultsGlobal(query, count, true) : searchResults(query, count, true);
         ConcurrentLog.info("RAGProxy", "searchResults=" + searchResults.length() + " global=" + global + " searchMs=" + (System.currentTimeMillis() - searchStart));
         StringBuilder sb = new StringBuilder();
 
-        // Convert raw rows into scoreable snippet candidates.
-        List<Snippet> results = new ArrayList<>();
         for (int i = 0; i < searchResults.length(); i++) {
             try {
                 JSONObject r = searchResults.getJSONObject(i);
@@ -176,26 +107,15 @@ public final class RAGAugmentor {
                 if (title.isEmpty()) title = url;
                 if (text.isEmpty()) text = title;
                 if (title.length() > 0 && text.length() > 0) {
-                    Snippet snippet = new Snippet(query, text, url, title, 256);
-                    if (snippet.getText().length() > 0) results.add(snippet);
+                    sb.append("## ").append(title).append("\n");
+                    sb.append(text).append("\n");
+                    if (url.length() > 0) sb.append("Source: ").append(url).append("\n");
+                    sb.append("\n\n");
                 }
             } catch (JSONException e) {}
         }
 
-        // Lower score is better with the current tf-idf based chunk scorer.
-        results.sort(Comparator.comparingDouble(Snippet::getScore));
-        // Keep top half to avoid overloading the model context window.
-        int limit = results.size() / 2;
-        if (results.size() > 0 && limit == 0) limit = 1;
-        for (int i = 0; i < limit; i++) {
-            Snippet snippet = results.get(i);
-            sb.append("## ").append(snippet.getTitle()).append("\n");
-            sb.append(snippet.text).append("\n");
-            if (snippet.getURL().length() > 0) sb.append("Source: ").append(snippet.getURL()).append("\n");
-            sb.append("\n\n");
-        }
-
-        ConcurrentLog.info("RAGProxy", "markdownChars=" + sb.length() + " snippetCount=" + results.size());
+        ConcurrentLog.info("RAGProxy", "markdownChars=" + sb.length() + " resultCount=" + searchResults.length());
         return sb.toString();
     }
 
@@ -209,10 +129,24 @@ public final class RAGAugmentor {
      * @return JSON array with normalized result objects
      */
     public static JSONArray searchResultsGlobal(String query, int count, final boolean includeSnippet) {
-        final JSONArray results = new JSONArray();
-        if (query == null || query.length() == 0 || count == 0) return results;
-        final Switchboard sb = Switchboard.getSwitchboard();
         final QueryParams theQuery = buildTextQueryParams(query, count, QueryParams.Searchdom.GLOBAL);
+        return searchResults(theQuery, count, includeSnippet);
+    }
+
+    /**
+     * Execute a shared YaCy search event and extract results in a compact JSON
+     * representation. This uses the same execution pipeline as normal web search
+     * for both local and global RAG retrieval.
+     *
+     * @param theQuery fully-built YaCy query params
+     * @param count max number of results
+     * @param includeSnippet include snippet text when available
+     * @return JSON array with normalized result objects
+     */
+    private static JSONArray searchResults(final QueryParams theQuery, final int count, final boolean includeSnippet) {
+        final JSONArray results = new JSONArray();
+        if (theQuery == null || count == 0) return results;
+        final Switchboard sb = Switchboard.getSwitchboard();
         final SearchEvent theSearch = SearchEventCache.getEvent(
                 theQuery,
                 sb.peers,
@@ -229,27 +163,44 @@ public final class RAGAugmentor {
         final long timeout = sb.getConfigLong(
                 SwitchboardConstants.REMOTESEARCH_MAXTIME_USER,
                 sb.getConfigLong(SwitchboardConstants.REMOTESEARCH_MAXTIME_DEFAULT, 3000));
-        // Wait until remote feeds are done (or timeout), then stabilize ordering.
-        waitForFeedingAndResort(theSearch, timeout);
-        for (int i = 0; i < count; i++) {
-            URIMetadataNode node = theSearch.oneResult(i, timeout);
-            if (node == null) break;
+        final boolean globalSearch = !theQuery.isLocal();
+        if (globalSearch) {
+            theSearch.resortCachedResults();
+        } else {
+            // Local search can wait briefly for feeder completion to stabilize ordering.
+            waitForFeedingAndResort(theSearch, timeout);
+        }
+        final long deadline = System.currentTimeMillis() + timeout;
+        int resultIndex = 0;
+        while (resultIndex < count) {
+            final long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) break;
+            final long attemptTimeout = globalSearch ? Math.min(remaining, 500L) : remaining;
+            final URIMetadataNode node = theSearch.oneResult(resultIndex, attemptTimeout);
+            if (node == null) {
+                if (!globalSearch || theSearch.isFeedingFinished()) break;
+                theSearch.resortCachedResults();
+                continue;
+            }
+            if (globalSearch) theSearch.resortCachedResults();
             try {
                 final JSONObject result = new JSONObject(true);
                 result.put("url", node.urlstring());
-                result.put("title", node.title());
+                String title = node.title();
+                String text = null;
                 if (includeSnippet) {
-                    // Prefer direct snippet; fall back to textSnippet, description, then text field.
-                    String text = node.snippet();
+                    if (text == null || text.isEmpty()) text = node.snippet();
                     if (text == null || text.isEmpty()) {
                         TextSnippet snippet = node.textSnippet();
                         if (snippet != null && snippet.exists() && !snippet.getErrorCode().fail()) text = snippet.getLineRaw();
                     }
                     if (text == null || text.isEmpty()) text = firstFieldString(node.getFieldValue(CollectionSchema.description_txt.getSolrFieldName()));
                     if (text == null || text.isEmpty()) text = firstFieldString(node.getFieldValue(CollectionSchema.text_t.getSolrFieldName()));
-                    result.put("text", limitSnippet(text == null ? "" : text.trim(), 2000));
+                    result.put("text", text == null ? "" : text.trim());
                 }
+                result.put("title", title);
                 results.put(result);
+                resultIndex++;
             } catch (JSONException e) {
             }
         }
@@ -274,16 +225,16 @@ public final class RAGAugmentor {
         String querystring = modifier.parse(query);
         if (querystring.length() == 0) querystring = query == null ? "" : query.trim();
         final QueryGoal qg = new QueryGoal(querystring);
-        return new QueryParams(
+        final QueryParams theQuery = new QueryParams(
                 qg,
                 modifier,
                 0,
                 "",
-                Classification.ContentDomain.TEXT,
+                Classification.ContentDomain.ALL,
                 "",
-                timezoneOffset,
+                0,
                 new HashSet<Tagging.Metatag>(),
-                CacheStrategy.IFFRESH,
+                CacheStrategy.CACHEONLY,
                 count,
                 0,
                 ".*",
@@ -303,6 +254,18 @@ public final class RAGAugmentor {
                 0.0d,
                 0.0d,
                 sb.getConfigSet("search.navigation"));
+        theQuery.setStrictContentDom(!Boolean.FALSE.toString().equalsIgnoreCase(
+                sb.getConfig(SwitchboardConstants.SEARCH_STRICT_CONTENT_DOM,
+                        String.valueOf(SwitchboardConstants.SEARCH_STRICT_CONTENT_DOM_DEFAULT))));
+        theQuery.setMaxSuggestions(0);
+        theQuery.setStandardFacetsMaxCount(sb.getConfigInt(
+                SwitchboardConstants.SEARCH_NAVIGATION_MAXCOUNT,
+                QueryParams.FACETS_STANDARD_MAXCOUNT_DEFAULT));
+        theQuery.setDateFacetMaxCount(sb.getConfigInt(
+                SwitchboardConstants.SEARCH_NAVIGATION_DATES_MAXCOUNT,
+                QueryParams.FACETS_DATE_MAXCOUNT_DEFAULT));
+        theQuery.getQueryGoal().filterOut(Switchboard.blueList);
+        return theQuery;
     }
 
     /**
@@ -341,28 +304,6 @@ public final class RAGAugmentor {
     }
 
     /**
-     * Computes token overlap between original prompt and computed query terms.
-     *
-     * @param originalPrompt raw user prompt
-     * @param computedQuery generated query terms
-     * @param maxTerms max terms to keep; {@code <=0} means unlimited
-     * @return cleaned ordered overlap set
-     */
-    public static Set<String> intersectTokens(String originalPrompt, String computedQuery, int maxTerms) {
-        Set<String> promptTerms = querySet(originalPrompt == null ? "" : originalPrompt);
-        Set<String> queryTerms = querySet(computedQuery == null ? "" : computedQuery);
-        Set<String> intersection = new LinkedHashSet<>();
-        for (String term : promptTerms) {
-            if (!queryTerms.contains(term)) continue;
-            final String cleaned = cleanToken(term);
-            if (cleaned.isEmpty()) continue;
-            intersection.add(cleaned);
-            if (maxTerms > 0 && intersection.size() >= maxTerms) break;
-        }
-        return intersection;
-    }
-
-    /**
      * Splits text into sentence-aware chunks around a target max length.
      *
      * @param text source text
@@ -386,45 +327,6 @@ public final class RAGAugmentor {
             start = end;
         }
         return result;
-    }
-
-    /**
-     * Converts a query string into a normalized token set.
-     *
-     * @param query raw query text
-     * @return lowercase token set
-     */
-    private static Set<String> querySet(String query) {
-        return Arrays.stream(query.trim().toLowerCase().split("\\s+"))
-                .map(String::toLowerCase)
-                .filter(word -> !word.isEmpty())
-                .collect(Collectors.toSet());
-    }
-
-    /**
-     * Removes non-alphanumeric characters and enforces minimal token length.
-     *
-     * @param term source token
-     * @return cleaned lowercase token or empty string
-     */
-    private static String cleanToken(String term) {
-        if (term == null) return "";
-        String cleaned = term.replaceAll("[^A-Za-z0-9]", "");
-        if (cleaned.length() < 2) return "";
-        return cleaned.toLowerCase();
-    }
-
-    /**
-     * Truncates snippet text to a maximum character count.
-     *
-     * @param text input text
-     * @param maxChars limit
-     * @return truncated or original text
-     */
-    private static String limitSnippet(String text, int maxChars) {
-        if (text == null) return "";
-        if (maxChars <= 0 || text.length() <= maxChars) return text;
-        return text.substring(0, maxChars);
     }
 
     /**
@@ -463,108 +365,4 @@ public final class RAGAugmentor {
         search.resortCachedResults();
     }
 
-    /**
-     * Represents one candidate snippet around a search result and stores its
-     * relevance score relative to the query.
-     */
-    private static class Snippet {
-        private String text, url, title;
-        private double score;
-
-        /**
-         * Scores text chunks and keeps the best chunk plus direct neighbors to
-         * preserve context continuity.
-         *
-         * @param query query text
-         * @param text source document/snippet text
-         * @param url source URL
-         * @param title source title
-         * @param maxChunkLength target chunk size
-         */
-        public Snippet(String query, String text, String url, String title, int maxChunkLength) {
-            this.url = url;
-            this.title = title;
-            this.score = 0.0;
-
-            if (text == null || text.isEmpty() || maxChunkLength <= 0 || query == null) {
-                this.text = "";
-                return;
-            }
-
-            List<String> chunks = slicer(text, maxChunkLength);
-            if (chunks.isEmpty()) {
-                this.text = "";
-                return;
-            }
-            List<String> chunksLowerCase = new ArrayList<>(chunks.size());
-            // Cache lowercase chunks so token comparisons are case-insensitive.
-            for (String chunk: chunks) chunksLowerCase.add(chunk.toLowerCase());
-
-            Set<String> queryWordSet = querySet(query);
-            if (queryWordSet.isEmpty()) {
-                this.text = "";
-                return;
-            }
-
-            int totalChunks = chunksLowerCase.size();
-            Map<String, Double> idf = new HashMap<>();
-            for (String word: queryWordSet) {
-                int docFreq = 0;
-                for (String chunk: chunksLowerCase) {
-                    if (chunk.contains(word)) docFreq++;
-                }
-                // Smoothed IDF to avoid divide-by-zero and extreme values.
-                idf.put(word, Math.log((double) totalChunks / (docFreq + 1)) + 1);
-            }
-
-            Map<Integer, Double> chunkScores = new HashMap<>();
-            for (int i = 0; i < chunksLowerCase.size(); i++) {
-                String chunk = chunksLowerCase.get(i);
-                double score = 0.0;
-                Map<String, Integer> tf = new HashMap<>();
-
-                String[] wordsInChunk = chunk.split("\\s+");
-                for (String w : wordsInChunk) {
-                    String cleanWord = w.replaceAll("[.,!?;:]", "");
-                    if (cleanWord.length() > 0 && queryWordSet.contains(cleanWord)) {
-                        tf.put(cleanWord, tf.getOrDefault(cleanWord, 0) + 1);
-                    }
-                }
-
-                for (String word: queryWordSet) {
-                    int tfValue = tf.getOrDefault(word, 0);
-                    double tfIdf = (double) tfValue * idf.getOrDefault(word, 1.0);
-                    score += tfIdf;
-                }
-                chunkScores.put(i, score);
-            }
-
-            int topChunkIndex = -1;
-            for (Map.Entry<Integer, Double> entry: chunkScores.entrySet()) {
-                // Keep best-scoring chunk index.
-                if (entry.getValue() > this.score) {
-                    this.score = entry.getValue();
-                    topChunkIndex = entry.getKey();
-                }
-            }
-
-            if (topChunkIndex < 0) {
-                this.text = "";
-                this.score = 0.0;
-                return;
-            }
-
-            List<String> snippetChunks = new ArrayList<>();
-            // Include neighboring chunks to reduce abrupt starts/ends.
-            if (topChunkIndex > 0) snippetChunks.add(chunks.get(topChunkIndex - 1));
-            snippetChunks.add(chunks.get(topChunkIndex));
-            if (topChunkIndex < chunks.size() - 1) snippetChunks.add(chunks.get(topChunkIndex + 1));
-            this.text = String.join(" ", snippetChunks);
-        }
-
-        public double getScore() { return this.score; }
-        public String getText() { return this.text; }
-        public String getURL() { return this.url; }
-        public String getTitle() { return this.title; }
-    }
 }
