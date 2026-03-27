@@ -94,6 +94,15 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             Pattern.compile("!\\[(.*?)\\]\\((.+?)\\)");
     private static final Pattern MARKDOWN_EMPHASIS_PATTERN =
             Pattern.compile("(\\*\\*|__|~~|`|\\*|_)");
+    /**
+     * Temporary compatibility patch for legacy snippet entries in existing indexes :
+     * older snippet generation could persist a literal "\n" before markdown prefixes
+     * (notably list items), which later rendered as visible "n-" fragments.
+     * Convert only these escaped markdown line starts back to real newlines so the
+     * normal markdown stripping below can remove them.
+     */
+    private static final Pattern LEGACY_ESCAPED_NEWLINE_MARKDOWN_PREFIX_PATTERN =
+            Pattern.compile("\\\\n(?=\\s{0,3}(#{1,6}\\s+|>\\s+|[-*+]\\s+|\\d+\\.\\s+))");
     private static final Pattern MARKDOWN_PREFIX_PATTERN =
             Pattern.compile("(?m)^\\s{0,3}(#{1,6}\\s+|>\\s+|[-*+]\\s+|\\d+\\.\\s+)");
 
@@ -500,6 +509,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
         }
         String sanitized = line;
         sanitized = sanitized.replace("```", " ");
+        sanitized = LEGACY_ESCAPED_NEWLINE_MARKDOWN_PREFIX_PATTERN.matcher(sanitized).replaceAll("\n");
         sanitized = MARKDOWN_IMAGE_PATTERN.matcher(sanitized).replaceAll("$1");
         sanitized = MARKDOWN_LINK_PATTERN.matcher(sanitized).replaceAll("$1");
         sanitized = MARKDOWN_PREFIX_PATTERN.matcher(sanitized).replaceAll("");
