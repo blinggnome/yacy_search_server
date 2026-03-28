@@ -674,15 +674,17 @@
           const cell = row.cells[col];
           if (!cell) continue;
           let checkbox = cell.querySelector('input[type="checkbox"]');
+          let isNewCheckbox = false;
           if (!checkbox) {
             checkbox = document.createElement("input");
             checkbox.type = "checkbox";
             cell.textContent = "";
             cell.appendChild(checkbox);
             checkbox.checked = !!defaultChecked && isSelectableUsageColumn(col);
+            isNewCheckbox = true;
           }
           checkbox.disabled = col >= PRODUCTION_MODEL_FEATURE_COLUMN_START || !isSelectableUsageColumn(col);
-          if (!isSelectableUsageColumn(col)) checkbox.checked = false;
+          if (isNewCheckbox && !isSelectableUsageColumn(col)) checkbox.checked = false;
           initializeUsageCheckbox(checkbox, col);
         }
         if (defaultChecked) {

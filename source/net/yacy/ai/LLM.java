@@ -70,9 +70,11 @@ public class LLM {
     public static class LLMModel {
         public LLM llm;
         public String model;
-        public LLMModel(LLM llm, String model) {
+        public boolean tooling;
+        public LLMModel(LLM llm, String model, boolean tooling) {
             this.llm = llm;
             this.model = model;
+            this.tooling = tooling;
         }
     }
     
@@ -108,9 +110,10 @@ public class LLM {
                     final String api_key = row.optString("api_key", "");
                     final int max_tokens = Integer.parseInt(row.optString("max_tokens", "4096"));
                     final String model = row.optString("model", "");
+                    final boolean tooling = row.optBoolean("tooling", false);
                     final LLMType type = LLMType.valueOf(row.optString("service", "OLLAMA"));
                     LLM llm = new LLM(hoststub, api_key, max_tokens, type);
-                    LLMModel llmmodel = new LLMModel(llm, model);
+                    LLMModel llmmodel = new LLMModel(llm, model, tooling);
                     return llmmodel;
                 }
             }
