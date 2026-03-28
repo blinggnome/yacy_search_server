@@ -272,6 +272,11 @@ public class LLM {
             data.put("messages", context);
             data.put("stop", new JSONArray(STOPTOKENS));
             data.put("stream", false);
+            
+            if (model.toLowerCase().contains("qwen3.5")) { // we don't think
+                data.put("reasoning_effort", "none");
+                data.put("enable_thinking", false);
+            }
 
             if (schema != null) {
                 System.out.println(schema.toString());

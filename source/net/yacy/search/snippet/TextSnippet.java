@@ -207,6 +207,7 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             final int snippetMaxLength,
             final boolean reindexing) {
     	long beginTime = System.currentTimeMillis();
+        final boolean fullDocumentSnippet = snippetMaxLength < 0;
         // heise = "0OQUNU3JSs05"
         
         final DigestURL url = row.url();
@@ -286,13 +287,18 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             }
 
             if (sentences.iterator().hasNext()) {
-                try {
-                    final SnippetExtractor tsr = new SnippetExtractor(sentences, remainingTerms, snippetMaxLength);
-                    textline = tsr.getSnippet();
-                    remainingTerms = tsr.getRemainingTerms();
-                } catch (final UnsupportedOperationException e) {
-                    init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
-                    return;
+                if (fullDocumentSnippet) {
+                    textline = collectAllSentences(sentences);
+                    remainingTerms.clear();
+                } else {
+                    try {
+                        final SnippetExtractor tsr = new SnippetExtractor(sentences, remainingTerms, snippetMaxLength);
+                        textline = tsr.getSnippet();
+                        remainingTerms = tsr.getRemainingTerms();
+                    } catch (final UnsupportedOperationException e) {
+                        init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
+                        return;
+                    }
                 }
             }
        }
@@ -333,13 +339,17 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
                     }
                     if (textline == null) {
                     	sentences.reset();
-                        final StringBuilder s = new StringBuilder(snippetMaxLength);
-                        for (final StringBuilder t: sentences) {
-                        	s.append(t).append(' ');
-                        	if (s.length() >= snippetMaxLength / 4 * 3) break;
+                        if (fullDocumentSnippet) {
+                            textline = collectAllSentences(sentences);
+                        } else {
+                            final StringBuilder s = new StringBuilder(snippetMaxLength);
+                            for (final StringBuilder t: sentences) {
+                        	    s.append(t).append(' ');
+                        	    if (s.length() >= snippetMaxLength / 4 * 3) break;
+                            }
+                            if (s.length() > snippetMaxLength) { s.setLength(snippetMaxLength); s.trimToSize(); }
+                            textline = s.toString();
                         }
-                        if (s.length() > snippetMaxLength) { s.setLength(snippetMaxLength); s.trimToSize(); }
-                        textline = s.toString();
                     }
                 }
             }
@@ -397,13 +407,18 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             return;
         }
 
-        try {
-            final SnippetExtractor tsr = new SnippetExtractor(sentences, remainingTerms, snippetMaxLength);
-            textline = tsr.getSnippet();
-            remainingTerms =  tsr.getRemainingTerms();
-        } catch (final UnsupportedOperationException e) {
-            init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
-            return;
+        if (fullDocumentSnippet) {
+            textline = collectAllSentences(sentences);
+            remainingTerms.clear();
+        } else {
+            try {
+                final SnippetExtractor tsr = new SnippetExtractor(sentences, remainingTerms, snippetMaxLength);
+                textline = tsr.getSnippet();
+                remainingTerms =  tsr.getRemainingTerms();
+            } catch (final UnsupportedOperationException e) {
+                init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "snippet extractor failed:" + e.getMessage(), beginTime);
+                return;
+            }
         }
         sentences = null;
 
@@ -411,13 +426,30 @@ public class TextSnippet implements Comparable<TextSnippet>, Comparator<TextSnip
             init(url, null, null, false, ResultClass.ERROR_NO_MATCH, "no matching snippet found", beginTime);
             return;
         }
-        if (textline.length() > snippetMaxLength) textline = textline.substring(0, snippetMaxLength);
+        if (!fullDocumentSnippet && textline.length() > snippetMaxLength) textline = textline.substring(0, snippetMaxLength);
 
         // finally store this snippet in our own cache
         if(wordhashes != null) {
         	snippetsCache.put(wordhashes, urlHash, textline);
         }
         init(url, textline, textline, false, source, null, beginTime);
+    }
+
+    private static String collectAllSentences(final Iterable<StringBuilder> sentences) {
+        if (sentences == null) {
+            return null;
+        }
+        final StringBuilder all = new StringBuilder();
+        for (final StringBuilder sentence : sentences) {
+            if (sentence == null || sentence.length() == 0) {
+                continue;
+            }
+            if (all.length() > 0) {
+                all.append(' ');
+            }
+            all.append(sentence);
+        }
+        return all.toString();
     }
 
     /**

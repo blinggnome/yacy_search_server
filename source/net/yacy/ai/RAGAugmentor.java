@@ -189,11 +189,9 @@ public final class RAGAugmentor {
                 String title = node.title();
                 String text = null;
                 if (includeSnippet) {
+                    TextSnippet snippet = node.textSnippet();
+                    if (snippet != null && snippet.exists() && !snippet.getErrorCode().fail()) text = snippet.getLineRaw();
                     if (text == null || text.isEmpty()) text = node.snippet();
-                    if (text == null || text.isEmpty()) {
-                        TextSnippet snippet = node.textSnippet();
-                        if (snippet != null && snippet.exists() && !snippet.getErrorCode().fail()) text = snippet.getLineRaw();
-                    }
                     if (text == null || text.isEmpty()) text = firstFieldString(node.getFieldValue(CollectionSchema.description_txt.getSolrFieldName()));
                     if (text == null || text.isEmpty()) text = firstFieldString(node.getFieldValue(CollectionSchema.text_t.getSolrFieldName()));
                     result.put("text", text == null ? "" : text.trim());
@@ -264,6 +262,7 @@ public final class RAGAugmentor {
         theQuery.setDateFacetMaxCount(sb.getConfigInt(
                 SwitchboardConstants.SEARCH_NAVIGATION_DATES_MAXCOUNT,
                 QueryParams.FACETS_DATE_MAXCOUNT_DEFAULT));
+        theQuery.setSnippetFetchFullText(true);
         theQuery.getQueryGoal().filterOut(Switchboard.blueList);
         return theQuery;
     }

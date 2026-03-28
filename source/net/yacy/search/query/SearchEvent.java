@@ -227,6 +227,8 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
 
     /** if this is true, then every entry in result List is polled immediately to prevent a re-ranking in the resultList. This is usefull if there is only one index source. */
     private final boolean pollImmediately;
+    /** Disable post-ranking when operating in explicit local-search mode. */
+    private final boolean disablePostRanking;
     public  final boolean excludeintext_image;
 
     // the following values are filled during the search process as statistics for the search
@@ -430,6 +432,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         this.feedersTerminated = new AtomicInteger(0);
         this.snippetFetchAlive = new AtomicInteger(0);
         this.addRunning = true;
+        this.disablePostRanking = this.query.isLocal();
         this.receivedRemoteReferences = new AtomicInteger(0);
         this.order = new ReferenceOrder(this.query.ranking, this.query.targetlang);
         this.urlhashes = new RowHandleSet(Word.commonHashLength, Word.commonHashOrder, 100);
@@ -496,7 +499,8 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         } else {
             this.primarySearchThreadsL = null;
             this.nodeSearchThreads = null;
-            this.pollImmediately = !query.getSegment().connectedRWI() || !Switchboard.getSwitchboard().getConfigBool(SwitchboardConstants.INDEX_RECEIVE_ALLOW_SEARCH, false);
+            this.pollImmediately = !query.getSegment().connectedRWI()
+                    || !Switchboard.getSwitchboard().getConfigBool(SwitchboardConstants.INDEX_RECEIVE_ALLOW_SEARCH, false);
             if ( generateAbstracts ) {
                 // we need the results now
                 try {
@@ -1893,9 +1897,11 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                         this.query.getQueryGoal().getIncludeHashes(),
                         CacheStrategy.CACHEONLY,
                         false,
-                        180,
+                        snippetMaxLength(true),
                         false);
-                final TextSnippet selectedSnippet = solrsnippet.getLineRaw().length() > yacysnippet.getLineRaw().length() ? solrsnippet : yacysnippet;
+                final TextSnippet selectedSnippet = this.query.isSnippetFetchFullText() && node.getText() != null && !node.getText().isEmpty()
+                        ? new TextSnippet(node.url(), node.getText(), false, ResultClass.SOURCE_METADATA, "")
+                        : (solrsnippet.getLineRaw().length() > yacysnippet.getLineRaw().length() ? solrsnippet : yacysnippet);
                 final URIMetadataNode re = node.makeResultEntry(this.query.getSegment(), this.peers, maximizeSnippet(node, selectedSnippet));
                 addResult(re, localEntryElement.getWeight());
                 success = true;
@@ -1937,7 +1943,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
      */
     public void addResult(URIMetadataNode resultEntry, final long score) {
         if (resultEntry == null) return;
-        final long ranking = (score * 128) + postRanking(resultEntry, this.ref /*this.getTopicNavigator(MAX_TOPWORDS)*/);
+        final long ranking = this.disablePostRanking ? score : (score * 128) + postRanking(resultEntry, this.ref /*this.getTopicNavigator(MAX_TOPWORDS)*/);
         // TODO: above was originally using (see below), but getTopicNavigator returns this.ref and possibliy alters this.ref on first call (this.ref.size < 2 -> this.ref.clear)
         // TODO: verify and straighten the use of addTopic, getTopic and getTopicNavigator and related score calculation
         // final long ranking = ((long) (score * 128.f)) + postRanking(resultEntry, this.getTopicNavigator(MAX_TOPWORDS));
@@ -2011,6 +2017,14 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
     public URIMetadataNode getSnippet(URIMetadataNode page, final CacheStrategy cacheStrategy) {
         if (page == null) return null;
 
+        if (this.query.isSnippetFetchFullText()) {
+            final String fullText = page.getText();
+            if (fullText != null && !fullText.isEmpty()) {
+                final TextSnippet snippet = new TextSnippet(page.url(), fullText, false, ResultClass.SOURCE_METADATA, "");
+                return page.makeResultEntry(this.query.getSegment(), this.peers, snippet);
+            }
+        }
+
         if (cacheStrategy == null) {
             final TextSnippet snippet = new TextSnippet(
                     null,
@@ -2019,7 +2033,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                     this.snippetFetchWordHashes,
                     null,
                     ((this.query.constraint != null) && (this.query.constraint.get(Tokenizer.flag_cat_indexof))),
-                    SearchEvent.SNIPPET_MAX_LENGTH,
+                    snippetMaxLength(false),
                     !this.query.isLocal());
             return page.makeResultEntry(this.query.getSegment(), this.peers, maximizeSnippet(page, snippet)); // result without snippet
         }
@@ -2036,7 +2050,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                     this.snippetFetchWordHashes,
                     cacheStrategy,
                     ((this.query.constraint != null) && (this.query.constraint.get(Tokenizer.flag_cat_indexof))),
-                    180,
+                    snippetMaxLength(true),
                     !this.query.isLocal());
             SearchEvent.log.info("text snippet load time for " + page.url().toNormalform(true) + ": " + (System.currentTimeMillis() - startTime) + " ms, " + (!snippet.getErrorCode().fail() ? "snippet found" : ("no snippet found (" + snippet.getError() + ")")));
 
@@ -2082,8 +2096,11 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         return page.makeResultEntry(this.query.getSegment(), this.peers, null); // result without snippet
     }
 
-    private static TextSnippet maximizeSnippet(final URIMetadataNode page, final TextSnippet snippet) {
+    private TextSnippet maximizeSnippet(final URIMetadataNode page, final TextSnippet snippet) {
         if (page == null || snippet == null || !snippet.exists()) {
+            return snippet;
+        }
+        if (!this.query.isSnippetFetchFullText()) {
             return snippet;
         }
         String rawText = page.getText();
@@ -2097,6 +2114,13 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
             return snippet;
         }
         return new TextSnippet(page.url(), rawText, snippet.getLineRaw(), snippet.isMarked(), snippet.getErrorCode(), snippet.getError());
+    }
+
+    private int snippetMaxLength(final boolean shortSnippetDefault) {
+        if (this.query.isSnippetFetchFullText()) {
+            return -1;
+        }
+        return shortSnippetDefault ? 180 : SearchEvent.SNIPPET_MAX_LENGTH;
     }
 
     /**
