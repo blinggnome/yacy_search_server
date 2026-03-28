@@ -195,7 +195,7 @@ public class RAGProxyServlet extends HttpServlet {
                 if (countWords(user) <= DIRECT_SEARCH_WORD_LIMIT) {
                     searchResultQuery = user;
                 } else {
-                    searchResultQuery = RAGAugmentor.searchWordsForPrompt(llm4tldr.llm, llm4tldr.model, queryPrefix + user); // might return null in case any error occurred
+                    searchResultQuery = RAGAugmentor.searchWordsForPrompt(llm4tldr.llm, llm4tldr.model, user, queryPrefix); // might return null in case any error occurred
                     if (searchResultQuery == null || searchResultQuery.length() == 0) searchResultQuery = user; // in case there is an error we simply search with the prompt
                 }
                 final long queryElapsed = System.currentTimeMillis() - queryStart;

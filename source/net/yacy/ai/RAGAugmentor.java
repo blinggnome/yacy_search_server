@@ -276,11 +276,14 @@ public final class RAGAugmentor {
      * @param prompt user prompt to analyze
      * @return space-separated lowercase term list or {@code null} on failure
      */
-    public static String searchWordsForPrompt(LLM llm, String model, String prompt) {
-        final String question = prompt == null ? "" : prompt;
+    public static String searchWordsForPrompt(final LLM llm, final String model, final String prompt, final String systemPrompt) {
+        final String question = prompt == null ? "" : prompt.trim();
+        final String instruction = systemPrompt == null || systemPrompt.trim().isEmpty()
+                ? "Compress the user prompt into a short search description. Return only a JSON array of concise, discriminative search terms in lowercase."
+                : systemPrompt.trim();
         if (llm == null || model == null || model.isEmpty()) return null;
         try {
-            LLM.Context context = new LLM.Context("\n\nYou may receive additional expert knowledge in the user prompt after a 'Additional Information' headline to enhance your knowledge. Use it only if applicable.");
+            LLM.Context context = new LLM.Context(instruction);
             context.addPrompt(question);
             Set<String> singlewords = new LinkedHashSet<>();
             String[] a = LLM.stringsFromChat(llm.chat(model, context, LLM.listSchema, 200));
