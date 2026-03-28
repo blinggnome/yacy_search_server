@@ -68,10 +68,27 @@ import net.yacy.search.snippet.TextSnippet;
  */
 public final class RAGAugmentor {
 
+    public static final String SEARCH_DOCUMENT_MAX_LENGTH_CONFIG = "ai.rag.search-document-maxlength";
+    public static final int SEARCH_DOCUMENT_MAX_LENGTH_DEFAULT = 30000;
+
     /**
      * Utility class; not instantiable.
      */
     private RAGAugmentor() {}
+
+    public static int configuredSearchDocumentMaxLength() {
+        final Switchboard sb = Switchboard.getSwitchboard();
+        if (sb == null) return SEARCH_DOCUMENT_MAX_LENGTH_DEFAULT;
+        final long configured = sb.getConfigLong(SEARCH_DOCUMENT_MAX_LENGTH_CONFIG, SEARCH_DOCUMENT_MAX_LENGTH_DEFAULT);
+        if (configured <= 0) return SEARCH_DOCUMENT_MAX_LENGTH_DEFAULT;
+        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
+    }
+
+    private static String truncateSearchDocument(final String markdown) {
+        if (markdown == null || markdown.isEmpty()) return "";
+        final int maxLength = configuredSearchDocumentMaxLength();
+        return markdown.length() <= maxLength ? markdown : markdown.substring(0, maxLength);
+    }
 
     /**
      * Executes local index search.
@@ -117,8 +134,9 @@ public final class RAGAugmentor {
             } catch (JSONException e) {}
         }
 
-        ConcurrentLog.info("RAGProxy", "markdownChars=" + sb.length() + " resultCount=" + searchResults.length());
-        return sb.toString();
+        final String markdown = truncateSearchDocument(sb.toString());
+        ConcurrentLog.info("RAGProxy", "markdownChars=" + markdown.length() + " resultCount=" + searchResults.length());
+        return markdown;
     }
 
     /**
