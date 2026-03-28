@@ -35,6 +35,43 @@ import net.yacy.server.serverSwitch;
 
 public class LLMSelection_p {
 
+    private static final String MODEL_CAPABILITIES_CONFIG = "ai.model_capabilities";
+
+    private static String normalizeCapabilityStatus(final Object value) {
+        if (Boolean.TRUE.equals(value)) return "supported";
+        if (Boolean.FALSE.equals(value)) return "unsupported";
+        final String text = value == null ? "" : value.toString().trim().toLowerCase();
+        if ("supported".equals(text) || "unsupported".equals(text) || "unknown".equals(text)) return text;
+        return "unknown";
+    }
+
+    private static JSONObject normalizeModelCapabilities(final JSONObject source) throws JSONException {
+        final JSONObject normalized = new JSONObject(true);
+        if (source == null) return normalized;
+        for (final String key : source.keySet()) {
+            final JSONObject entry = source.optJSONObject(key);
+            final JSONObject normalizedEntry = new JSONObject(true);
+            if (entry != null) {
+                normalizedEntry.put("tooling", normalizeCapabilityStatus(entry.opt("tooling")));
+                normalizedEntry.put("vision", normalizeCapabilityStatus(entry.opt("vision")));
+            } else {
+                normalizedEntry.put("tooling", "unknown");
+                normalizedEntry.put("vision", "unknown");
+            }
+            normalized.put(key, normalizedEntry);
+        }
+        return normalized;
+    }
+
+    private static String capabilityKey(final JSONObject row) {
+        if (row == null) return "";
+        final String service = row.optString("service", "").trim();
+        String hoststub = row.optString("hoststub", "").trim();
+        while (hoststub.endsWith("/")) hoststub = hoststub.substring(0, hoststub.length() - 1);
+        final String model = row.optString("model", "").trim();
+        return service + "|" + hoststub + "|" + model;
+    }
+
     private static JSONObject normalizeProductionModelRow(final JSONObject row) throws JSONException {
         final JSONObject normalized = new JSONObject(true);
         normalized.put("service", row.optString("service", "OLLAMA"));
@@ -84,6 +121,15 @@ public class LLMSelection_p {
             }
         }
 
+        JSONObject modelCapabilities = bodyj.optJSONObject("model_capabilities");
+        if (modelCapabilities != null) {
+            try {
+                sb.setConfig(MODEL_CAPABILITIES_CONFIG, normalizeModelCapabilities(modelCapabilities).toString());
+            } catch (JSONException e) {
+                sb.setConfig(MODEL_CAPABILITIES_CONFIG, "{}");
+            }
+        }
+
         JSONObject inferenceSystem = bodyj.optJSONObject("inference_system");
         if (inferenceSystem != null) {
             sb.setConfig("ai.inference_system", inferenceSystem.toString());
@@ -106,6 +152,14 @@ public class LLMSelection_p {
         }]}
         */
         
+        JSONObject capabilities = new JSONObject(true);
+        final String capabilitiesJson = sb.getConfig(MODEL_CAPABILITIES_CONFIG, "{}");
+        try {
+            capabilities = normalizeModelCapabilities(new JSONObject(new JSONTokener(capabilitiesJson)));
+        } catch (JSONException e) {
+            capabilities = new JSONObject(true);
+        }
+
         // generate table for production_models
         String pms = sb.getConfig("ai.production_models", "[]");
         if (pms.isEmpty() || pms.equals("{}")) pms = "[]";
@@ -127,12 +181,42 @@ public class LLMSelection_p {
                 prop.put("productionmodels_" + i + "_qapairs", row.optBoolean("qapairs", false));
                 prop.put("productionmodels_" + i + "_tldr", row.optBoolean("tldr", false));
                 
-                prop.put("productionmodels_" + i + "_tooling", row.optBoolean("tooling", false));
-                prop.put("productionmodels_" + i + "_vision", row.optBoolean("vision", false));
+                final String key = capabilityKey(row);
+                JSONObject capabilityEntry = key.isEmpty() ? null : capabilities.optJSONObject(key);
+                String toolingStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("tooling"));
+                String visionStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("vision"));
+                if (row.optBoolean("tooling", false)) toolingStatus = "supported";
+                if (row.optBoolean("vision", false)) visionStatus = "supported";
+                prop.put("productionmodels_" + i + "_tooling",
+                        "supported".equals(toolingStatus) ? "yes" : "unsupported".equals(toolingStatus) ? "no" : "?");
+                prop.put("productionmodels_" + i + "_vision",
+                        "supported".equals(visionStatus) ? "yes" : "unsupported".equals(visionStatus) ? "no" : "?");
             }
             prop.put("productionmodels", production_models.length());
         } catch (JSONException e) {
             e.printStackTrace();
+        }
+
+        try {
+            if (production_models != null) {
+                for (int i = 0; i < production_models.length(); i++) {
+                    final JSONObject row = normalizeProductionModelRow(production_models.getJSONObject(i));
+                    final String key = capabilityKey(row);
+                    if (key.isEmpty()) continue;
+                    JSONObject entry = capabilities.optJSONObject(key);
+                    if (entry == null) {
+                        entry = new JSONObject(true);
+                        entry.put("tooling", "unknown");
+                        entry.put("vision", "unknown");
+                        capabilities.put(key, entry);
+                    }
+                    if (row.optBoolean("tooling", false)) entry.put("tooling", "supported");
+                    if (row.optBoolean("vision", false)) entry.put("vision", "supported");
+                }
+            }
+            prop.putHTML("model_capabilities", capabilities.toString());
+        } catch (JSONException e) {
+            prop.putHTML("model_capabilities", "{}");
         }
 
         // prefill inference system configuration if present
