@@ -177,6 +177,10 @@
         }
       }
 
+      function capabilityLabelToBoolean(label) {
+        return (label || "").trim().toLowerCase() === "yes";
+      }
+
       function isCapabilityUnsupportedError(error) {
         const status = error && typeof error.status === "number" ? error.status : null;
         return status === 400 || status === 404 || status === 415 || status === 422;
@@ -931,9 +935,11 @@
           }
           const rowData = {};
           PRODUCTION_MODEL_COLUMN_NAMES.forEach((columnName, index) => {
-            if (index >= PRODUCTION_MODEL_USAGE_COLUMN_START && index <= PRODUCTION_MODEL_FEATURE_COLUMN_END) {
+            if (index >= PRODUCTION_MODEL_FEATURE_COLUMN_START && index <= PRODUCTION_MODEL_FEATURE_COLUMN_END) {
+              rowData[columnName] = capabilityLabelToBoolean(row.cells[index] ? row.cells[index].textContent : "");
+            } else if (index >= PRODUCTION_MODEL_USAGE_COLUMN_START && index <= PRODUCTION_MODEL_USAGE_COLUMN_END) {
               const checkbox = row.cells[index] ? row.cells[index].querySelector('input[type="checkbox"]') : null;
-              rowData[columnName] = checkbox && (index >= PRODUCTION_MODEL_FEATURE_COLUMN_START || isSelectableUsageColumn(index)) ? checkbox.checked : false;
+              rowData[columnName] = checkbox && isSelectableUsageColumn(index) ? checkbox.checked : false;
             } else {
               rowData[columnName] = row.cells[index] ? row.cells[index].textContent.trim() : "";
             }

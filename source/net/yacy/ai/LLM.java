@@ -98,6 +98,13 @@ public class LLM {
     public static LLMModel llmFromUsage(LLMUsage llmUsage) {
         Switchboard sb = Switchboard.getSwitchboard();
         String pms = sb.getConfig("ai.production_models", "[]");
+        String mcs = sb.getConfig("ai.model_capabilities", "{}");
+        JSONObject model_capabilities = new JSONObject(true);
+        try {
+            model_capabilities = new JSONObject(new JSONTokener(mcs));
+        } catch (JSONException e) {
+            model_capabilities = new JSONObject(true);
+        }
         try {
             JSONArray production_models = new JSONArray(new JSONTokener(pms));
             // got through all the selected models to find which one has the wanted usage flag switched on
@@ -110,7 +117,12 @@ public class LLM {
                     final String api_key = row.optString("api_key", "");
                     final int max_tokens = Integer.parseInt(row.optString("max_tokens", "4096"));
                     final String model = row.optString("model", "");
-                    final boolean tooling = row.optBoolean("tooling", false);
+                    boolean tooling = row.optBoolean("tooling", false);
+                    if (!tooling) {
+                        final String capabilityKey = row.optString("service", "OLLAMA") + "|" + hoststub.replaceAll("/+$", "") + "|" + model;
+                        final JSONObject capabilityEntry = model_capabilities.optJSONObject(capabilityKey);
+                        tooling = capabilityEntry != null && "supported".equals(capabilityEntry.optString("tooling", ""));
+                    }
                     final LLMType type = LLMType.valueOf(row.optString("service", "OLLAMA"));
                     LLM llm = new LLM(hoststub, api_key, max_tokens, type);
                     LLMModel llmmodel = new LLMModel(llm, model, tooling);

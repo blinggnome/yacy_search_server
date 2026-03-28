@@ -88,6 +88,11 @@ public final class ToolCallProtocol {
         try {
             final JSONObject prepared = body == null ? new JSONObject(true) : new JSONObject(body.toString());
             if (forceStream) prepared.put("stream", true);
+            final String model = prepared.optString("model", "");
+            if (model.toLowerCase().contains("qwen3.5")) {
+                prepared.put("reasoning_effort", "none");
+                prepared.put("enable_thinking", false);
+            }
             if (toolingEnabled) net.yacy.ai.ToolProvider.ensureTools(prepared);
             return prepared;
         } catch (JSONException e) {

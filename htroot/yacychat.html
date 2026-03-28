@@ -1716,14 +1716,12 @@
             messages: sanitizedUserMessage ? [...sanitizedMessages, sanitizedUserMessage] : sanitizedMessages,
             stream: true
         };
-        console.debug('[yacychat] payload search modes', payload.messages.map(m => ({ role: m.role, search: m.search })));
         const headers = { 'Content-Type': 'application/json' };
         const response = await fetch(state.config.apiHost.replace(/\/$/, '') + '/v1/chat/completions', {
             method: 'POST',
             headers,
             body: JSON.stringify(payload)
         });
-        console.debug('[yacychat] request ms', Math.round(performance.now() - requestStart));
         if (!response.ok) {
             if (response.status === 429) {
                 throw new Error('Rate limit reached: please wait and try again. The server is protecting itself from overload.');
@@ -1761,7 +1759,6 @@
             const searchName = parsed['search-filename'];
             const searchBase64 = parsed['search-text-base64'];
             if (!searchName || !searchBase64) return;
-            console.debug('[yacychat] received search attachment', { searchName, size: searchBase64.length, ms: Math.round(performance.now() - requestStart) });
             const dataUrl = `data:text/markdown;base64,${searchBase64}`;
             const textContent = base64ToUtf8(searchBase64);
             for (let i = state.messages.length - 1; i >= 0; i--) {
@@ -1801,8 +1798,16 @@
             try {
                 const parsed = JSON.parse(clean);
                 applySearchAttachment(parsed);
+                if (Array.isArray(parsed['tool-calls']) && parsed['tool-calls'].length > 0) {
+                    const injectedToolCalls = normalizeToolCalls(parsed['tool-calls']);
+                    if (injectedToolCalls.length > 0) {
+                        collectedToolCalls = injectedToolCalls;
+                        roundToolCalls = [];
+                    }
+                }
                 if (Array.isArray(parsed['tool-results']) && parsed['tool-results'].length > 0) {
-                    collectedToolResults = collectedToolResults.concat(normalizeToolResults(parsed['tool-results']));
+                    const normalizedResults = normalizeToolResults(parsed['tool-results']);
+                    collectedToolResults = collectedToolResults.concat(normalizedResults);
                 }
                 const choice = parsed?.choices?.[0];
                 const delta = choice?.delta;
@@ -1926,7 +1931,6 @@
                 : `Tool call: ${normalizedToolCalls.map(call => call?.function?.name || 'tool').join(', ')}`;
         }
         state.messages.push(assistantMessage);
-        console.debug('[yacychat] response chars', assistantText.length, 'total ms', Math.round(performance.now() - requestStart));
         state.assistantSeen = true;
         persistConversation();
         updateClearChatVisibility();
