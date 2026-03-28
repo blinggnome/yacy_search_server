@@ -213,9 +213,7 @@ public class RAGProxyServlet extends HttpServlet {
             
             JSONObject initialMetadata = null;
             if (searchResultMarkdown.length() > 0) {
-                initialMetadata = new JSONObject(true);
-                initialMetadata.put("search-filename", "search_result_" + searchResultQuery.replace(' ', '_') + ".md");
-                initialMetadata.put("search-text-base64", new String(Base64.getEncoder().encode(searchResultMarkdown.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8));
+                initialMetadata = RAGAugmentor.searchResultsDocument(searchResultQuery, 10, "global".equals(ragMode));
             }
 
             // ToolCallProtocol owns request preparation, initial stream handling and follow-up tool rounds.

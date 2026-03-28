@@ -21,6 +21,8 @@
 package net.yacy.ai;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -117,6 +119,41 @@ public final class RAGAugmentor {
 
         ConcurrentLog.info("RAGProxy", "markdownChars=" + sb.length() + " resultCount=" + searchResults.length());
         return sb.toString();
+    }
+
+    /**
+     * Build the same markdown search document envelope used by chat RAG
+     * attachment injection and tool-based search retrieval.
+     *
+     * @param query query string
+     * @param count max number of search rows
+     * @param global when true, use global YaCy search
+     * @return JSON object containing filename, base64 markdown and plain content
+     * @throws JSONException when JSON assembly fails
+     */
+    public static JSONObject searchResultsDocument(final String query, final int count, final boolean global) throws JSONException {
+        final String normalizedQuery = query == null ? "" : query.trim();
+        final String effectiveQuery = normalizedQuery.isEmpty() ? "search" : normalizedQuery;
+        final String markdown = searchResultsAsMarkdown(effectiveQuery, count, global);
+        final JSONObject doc = new JSONObject(true);
+        doc.put("search-filename", "search_result_" + effectiveQuery.replace(' ', '_') + ".md");
+        doc.put("search-text-base64", Base64.getEncoder().encodeToString(markdown.getBytes(StandardCharsets.UTF_8)));
+        doc.put("content", markdown);
+        return doc;
+    }
+
+    /**
+     * Determine whether chat search should default to global retrieval on the
+     * current peer.
+     *
+     * @return true when peer-to-peer/global search is available
+     */
+    public static boolean defaultSearchIsGlobal() {
+        final Switchboard sb = Switchboard.getSwitchboard();
+        if (sb == null) return false;
+        final boolean clustersearch = sb.isRobinsonMode()
+                && SwitchboardConstants.CLUSTER_MODE_PUBLIC_CLUSTER.equals(sb.getConfig(SwitchboardConstants.CLUSTER_MODE, ""));
+        return sb.getConfigBool(SwitchboardConstants.INDEX_RECEIVE_ALLOW_SEARCH, true) || clustersearch;
     }
 
     /**

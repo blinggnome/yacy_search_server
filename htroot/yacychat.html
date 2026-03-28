@@ -2050,6 +2050,30 @@
         return base64 ? base64ToUtf8(base64) : '';
     }
 
+    function parseStructuredToolResult(result) {
+        const raw = result?.content || result?.function?.content || '';
+        if (typeof raw !== 'string' || !raw.trim()) return null;
+        try {
+            return JSON.parse(raw);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function inferAttachmentFromToolResult(result) {
+        const payload = parseStructuredToolResult(result);
+        const name = payload?.['search-filename'];
+        const base64 = payload?.['search-text-base64'];
+        if (!name || !base64) return null;
+        return {
+            kind: 'text',
+            name,
+            dataUrl: `data:text/markdown;base64,${base64}`,
+            mime: 'text/markdown',
+            textContent: base64ToUtf8(base64)
+        };
+    }
+
     function messageDisplayText(message) {
         if (!message) return '';
         if (typeof message.display === 'string') return message.display;
@@ -2175,9 +2199,18 @@
             responseTitle.textContent = 'Response';
             item.appendChild(responseTitle);
 
+            const attachment = inferAttachmentFromToolResult(result);
+            if (attachment) {
+                const attachmentContainer = document.createElement('div');
+                attachmentContainer.appendChild(createAttachmentChip(attachment));
+                item.appendChild(attachmentContainer);
+            }
+
             const responseBody = document.createElement('pre');
             responseBody.className = 'toolcall-result';
-            responseBody.textContent = formatToolArguments(result?.content || result?.function?.content || '');
+            responseBody.textContent = attachment
+                ? attachmentTextContent(attachment)
+                : formatToolArguments(result?.content || result?.function?.content || '');
             item.appendChild(responseBody);
         }
 
