@@ -37,6 +37,10 @@
       const PRODUCTION_MODEL_ACTION_COLUMN_INDEX = PRODUCTION_MODEL_TOTAL_COLUMNS - 1;
       const PRODUCTION_MODEL_TOOLING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START;
       const PRODUCTION_MODEL_VISION_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 1;
+      const PRODUCTION_MODEL_ENABLED_USAGE_COLUMNS = new Set([
+        6,  // chat
+        11  // tldr
+      ]);
       const PRODUCTION_MODEL_COLUMN_NAMES = [
         "service",
         "model",
@@ -66,17 +70,20 @@
         ["qwen2.5:1.5b-instruct-q4_K_M",                      " 0.88",  "2GB", "Good small model for 1GB RAM", "Alibaba", "apache-2.0"],
         ["llama3.2:3b-instruct-q4_K_M",                       " 0.66",  "3GB", "A good 3B model", "Meta", "llama3.2"],
         //["qwen3-vl:2b-instruct-q4_K_M",                       " 0.73",  "3GB", "A very small vision-model, can understand what is sees in images"],
-        ["qwen3:4b-instruct-2507-q4_K_M",                     " 7.70",  "3GB", "Exceptional good 4B model", "Alibaba", "apache-2.0"],
         ["hf.co/unsloth/medgemma-4b-it-GGUF:Q4_K_M",          " 0.60",  "4GB", "Medical Knowledge and Vision", "Google", "health-ai-developer-foundations"],
         ["olmo-3:7b-instruct-q4_K_M",                         " 2.22",  "4GB", "open and accessible training data, open-source training code", "allenai.org", "apache-2.0"],
-        //["phi4:14b-q4_K_M",                                   " 5.24", "10GB", "Strong, made with synthetic data", "Microsoft", "mit"],
-        ["hf.co/mradermacher/Ling-mini-2.0-GGUF:Q4_K_M",      "20.00", "14GB", "very fast MoE model with 1.4B activated parameters per expert", "InclusionAI", "mit"],
-        //["magistral:24b-small-2506-q4_K_M",                   " 2.37", "16GB", "European flagship model, strong multilangual, reasoning", "mistral.ai", "apache-2.0"],
-        //["gemma3:27b-it-q4_K_M",                              " 4.81", "20GB", "Strong content safety, multilingual support in over 140 languages", "google.com", "gemma"],
+		["qwen3:4b-instruct-2507-q4_K_M",                     " 7.70",  "3GB", "a good 4B model", "Alibaba", "apache-2.0"],
+		["hf.co/janhq/Jan-v3-4B-base-instruct-gguf:Q4_K_M",   " 8.19", "6GB", "a brilliant 4B model, post-trained with large teacher from qwen3:4b", "jan.ai", "apache-2.0"],
+		["ministral-3:14b-instruct-2512-q4_K_M",              " 8.55", "10GB", "European flagship model, strong multilangual, vision, agentic", "mistral.ai", "apache-2.0"],
+		["olmo-3.1:32b-instruct-q4_K_M",                      "10.25",  "20GB", "open and accessible training data, open-source training code", "allenai.org", "apache-2.0"],
+		//["phi4:14b-q4_K_M",                                   " 5.24", "10GB", "Strong, made with synthetic data", "Microsoft", "mit"],
+		//["gemma3:27b-it-q4_K_M",                              " 4.81", "20GB", "Strong content safety, multilingual support in over 140 languages", "google.com", "gemma"],
         //["qwen3-vl:30b-a3b-instruct-q4_K_M",                  "17.33", "22GB", "Very fast, exceptional good 30B model, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"],
-        ["qwen3.5:35b-a3b-q4_K_M",                            "44.63", "25GB", "Very fast MoE, exceptional good 35B model with vision, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"]
+		["qwen3.5:9b-q4_K_M",                                 "18.37", "14GB", "multimodal, outstanding for its size, long-context 256K Tokens, strong instruction following model", "Alibaba", "apache-2.0"],
+		["hf.co/mradermacher/Ling-mini-2.0-GGUF:Q4_K_M",      "20.00", "20GB", "very fast 16B MoE model with 1.4B activated parameters per expert", "InclusionAI", "mit"],
+		["qwen3.5:35b-a3b-q4_K_M",                            "44.63", "25GB", "Very fast MoE, exceptional good 35B model with vision, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"]
       ];
-
+	  
       const MODEL_TABLE_HEADERS = ["Model", "Ranking", "Size", "Description", "Provider", "License", "Actions"];
       const RECOMMENDED_MODEL_MAP = new Map(
         RECOMMENDED_MODELS.map(([name, ranking, size, description, provider, license]) => [
@@ -563,6 +570,10 @@
         return button;
       }
 
+      function isSelectableUsageColumn(col) {
+        return PRODUCTION_MODEL_ENABLED_USAGE_COLUMNS.has(col);
+      }
+
       function handleModelSelect(modelName) {
         if (!modelName) return;
         upsertProductionModel(modelName);
@@ -668,18 +679,17 @@
             checkbox.type = "checkbox";
             cell.textContent = "";
             cell.appendChild(checkbox);
-            checkbox.checked = !!defaultChecked && col <= PRODUCTION_MODEL_USAGE_COLUMN_END;
-            if (col >= PRODUCTION_MODEL_FEATURE_COLUMN_START) {
-                // disable the checkbox
-                checkbox.disabled = true
-            }
+            checkbox.checked = !!defaultChecked && isSelectableUsageColumn(col);
           }
+          checkbox.disabled = col >= PRODUCTION_MODEL_FEATURE_COLUMN_START || !isSelectableUsageColumn(col);
+          if (!isSelectableUsageColumn(col)) checkbox.checked = false;
           initializeUsageCheckbox(checkbox, col);
         }
         if (defaultChecked) {
             // enforce feature exclusivity for row
             if (!row) return;
             for (let col = PRODUCTION_MODEL_USAGE_COLUMN_START; col <= PRODUCTION_MODEL_USAGE_COLUMN_END; col += 1) {
+              if (!isSelectableUsageColumn(col)) continue;
               const cell = row.cells[col];
               if (!cell) continue;
               const checkbox = cell.querySelector('input[type="checkbox"]');
@@ -804,7 +814,7 @@
           PRODUCTION_MODEL_COLUMN_NAMES.forEach((columnName, index) => {
             if (index >= PRODUCTION_MODEL_USAGE_COLUMN_START && index <= PRODUCTION_MODEL_FEATURE_COLUMN_END) {
               const checkbox = row.cells[index] ? row.cells[index].querySelector('input[type="checkbox"]') : null;
-              rowData[columnName] = checkbox ? checkbox.checked : false;
+              rowData[columnName] = checkbox && (index >= PRODUCTION_MODEL_FEATURE_COLUMN_START || isSelectableUsageColumn(index)) ? checkbox.checked : false;
             } else {
               rowData[columnName] = row.cells[index] ? row.cells[index].textContent.trim() : "";
             }
@@ -1285,12 +1295,12 @@
                 <td>#[api_key]#</td>
                 <td>#[max_tokens]#</td>
                 
-                <td><input type="checkbox" #(search)#::checked=true#(/search)#></td>
+                <td><input type="checkbox" #(search)#::checked=true#(/search)# disabled="disabled"></td>
                 <td><input type="checkbox" #(chat)#::checked=true#(/chat)#></td>
-                <td><input type="checkbox" #(translation)#::checked=true#(/translation)#></td>
-                <td><input type="checkbox" #(classification)#::checked=true#(/classification)#></td>
-                <td><input type="checkbox" #(query)#::checked=true#(/query)#></td>
-                <td><input type="checkbox" #(qapairs)#::checked=true#(/qapairs)#></td>
+                <td><input type="checkbox" #(translation)#::checked=true#(/translation)# disabled="disabled"></td>
+                <td><input type="checkbox" #(classification)#::checked=true#(/classification)# disabled="disabled"></td>
+                <td><input type="checkbox" #(query)#::checked=true#(/query)# disabled="disabled"></td>
+                <td><input type="checkbox" #(qapairs)#::checked=true#(/qapairs)# disabled="disabled"></td>
                 <td><input type="checkbox" #(tldr)#::checked=true#(/tldr)#></td>
                 
                 <td><input type="checkbox" #(tooling)#::checked=true#(/tooling)# disabled=true></td>
