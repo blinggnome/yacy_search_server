@@ -1829,7 +1829,7 @@
                 if (delta) {
                     if (!sawFirstDelta) {
                         sawFirstDelta = true;
-                        applyMessageContent(assistantNode, 'assistant', '');
+                        applyMessageContent(assistantNode, 'assistant', 'waiting for an answer...');
                         if (!focusShown && typeof onFirstToken === 'function') {
                             focusShown = true;
                             onFirstToken();
@@ -1863,7 +1863,9 @@
                             }
                         }, 2000);
                     }
-                    applyMessageContent(assistantNode, 'assistant', assistantText);
+                    if (assistantText) {
+                        applyMessageContent(assistantNode, 'assistant', assistantText);
+                    }
                     performAutoScroll();
                 }
             } catch (err) {
@@ -1984,6 +1986,9 @@
         if (message.tool_calls) {
             sanitized.tool_calls = message.tool_calls;
         }
+        if (message.tool_results) {
+            sanitized.tool_results = message.tool_results;
+        }
         if (message.tool_call_id) {
             sanitized.tool_call_id = message.tool_call_id;
         }
@@ -2017,6 +2022,12 @@
             return content.text;
         }
         return '';
+    }
+
+    function initialAssistantPlaceholder(message) {
+        return message?.search && message.search !== SEARCH_DEFAULTS.none
+            ? 'searching for content...'
+            : 'waiting for an answer...';
     }
 
     function inferAttachmentFromContent(content) {
@@ -2672,7 +2683,7 @@
         dom.input.value = '';
         clearAttachment();
         resizeComposer();
-        const assistantNode = appendMessage('assistant', 'waiting for an answer...');
+        const assistantNode = appendMessage('assistant', initialAssistantPlaceholder(userMessage));
         try {
             await streamChat(userMessage, assistantNode, { onFirstToken: showComposer, includeUserInPayload: false, pushUserToState: false, currentUserIndex: userIndex });
         } catch (err) {
