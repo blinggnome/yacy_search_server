@@ -729,8 +729,19 @@
 	  #%env/templates/submenuAI.template%#
     #(/topmenu)#
 
+    #(topmenu)#
+      <script>document.getElementById("greeting-icon").src="env/grafics/invisible.png"</script>
+      <h2 class="yacy"><a href="#[promoteSearchPageGreeting.homepage]#" class="yacylogo"><img src="#[promoteSearchPageGreeting.largeImage]#" alt="#[promoteSearchPageGreeting.imageAlt]#" style="margin: auto;"/></a></h2>
+      <h2 class="yacy">#[promoteChatPageGreeting]#</h2>
+    ::
+      <script>document.getElementById("greeting-icon").src="env/grafics/invisible.png"</script>
+      <h2 class="yacy"><a href="#[promoteSearchPageGreeting.homepage]#" class="yacylogo"><img src="#[promoteSearchPageGreeting.largeImage]#" alt="#[promoteSearchPageGreeting.imageAlt]#" style="margin: auto;"/></a></h2>
+      <h2 class="yacy">#[promoteChatPageGreeting]#</h2>
+    ::
+    #(/topmenu)#
+
     <h2>YaCy Chat</h2>
-    <p>Chat with your configured LLM using the local YaCy settings. Requests are sent to the same host that served this page.</p>
+    <p>This Chat is private. YaCy does not keep any history — only your browser remembers the current conversation.</p>
 
       <div class="chat-panel">
         <div class="chat-flow">
