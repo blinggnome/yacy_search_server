@@ -35,6 +35,27 @@ import net.yacy.server.serverSwitch;
 
 public class LLMSelection_p {
 
+    private static JSONObject normalizeProductionModelRow(final JSONObject row) throws JSONException {
+        final JSONObject normalized = new JSONObject(true);
+        normalized.put("service", row.optString("service", "OLLAMA"));
+        normalized.put("model", row.optString("model", ""));
+        normalized.put("hoststub", row.optString("hoststub", ""));
+        normalized.put("api_key", row.optString("api_key", ""));
+        normalized.put("max_tokens", row.optString("max_tokens", "4096"));
+
+        normalized.put("search", false);
+        normalized.put("chat", row.optBoolean("chat", false));
+        normalized.put("translation", false);
+        normalized.put("classification", false);
+        normalized.put("query", false);
+        normalized.put("qapairs", false);
+        normalized.put("tldr", row.optBoolean("tldr", false));
+
+        normalized.put("tooling", row.optBoolean("tooling", false));
+        normalized.put("vision", row.optBoolean("vision", false));
+        return normalized;
+    }
+
     public static serverObjects respond(@SuppressWarnings("unused") final RequestHeader header, final serverObjects post, final serverSwitch env) {
         // return variable that accumulates replacements
         final Switchboard sb = (Switchboard) env;
@@ -53,7 +74,11 @@ public class LLMSelection_p {
         if (production_models != null) {
             // simply store the model array
             try {
-                sb.setConfig("ai.production_models", production_models.toString(0));
+                final JSONArray normalizedModels = new JSONArray();
+                for (int i = 0; i < production_models.length(); i++) {
+                    normalizedModels.put(normalizeProductionModelRow(production_models.getJSONObject(i)));
+                }
+                sb.setConfig("ai.production_models", normalizedModels.toString(0));
             } catch (JSONException e) {
                 //e.printStackTrace();
             }
@@ -87,7 +112,7 @@ public class LLMSelection_p {
         try {
             production_models = new JSONArray(new JSONTokener(pms));
             for (int i = 0; i < production_models.length(); i++) {
-                JSONObject row = production_models.getJSONObject(i);
+                JSONObject row = normalizeProductionModelRow(production_models.getJSONObject(i));
                 prop.put("productionmodels_" + i + "_service", row.optString("service", "OLLAMA"));
                 prop.put("productionmodels_" + i + "_model", row.optString("model", ""));
                 prop.put("productionmodels_" + i + "_hoststub", row.optString("hoststub", ""));
