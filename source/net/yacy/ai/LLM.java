@@ -43,6 +43,7 @@ import net.yacy.search.Switchboard;
 
 public class LLM {
 
+    private static final String MODEL_CAPABILITIES_CONFIG = "ai.model_capabilities";
     private static String[] STOPTOKENS = new String[]{"[/INST]", "<|im_end|>", "<|end_of_turn|>", "<|eot_id|>", "<|end_header_id|>", "<EOS_TOKEN>", "</s>", "<|end|>"};
 
     public static enum LLMType {
@@ -71,10 +72,12 @@ public class LLM {
         public LLM llm;
         public String model;
         public boolean tooling;
-        public LLMModel(LLM llm, String model, boolean tooling) {
+        public boolean thinking;
+        public LLMModel(LLM llm, String model, boolean tooling, boolean thinking) {
             this.llm = llm;
             this.model = model;
             this.tooling = tooling;
+            this.thinking = thinking;
         }
     }
     
@@ -98,13 +101,7 @@ public class LLM {
     public static LLMModel llmFromUsage(LLMUsage llmUsage) {
         Switchboard sb = Switchboard.getSwitchboard();
         String pms = sb.getConfig("ai.production_models", "[]");
-        String mcs = sb.getConfig("ai.model_capabilities", "{}");
-        JSONObject model_capabilities = new JSONObject(true);
-        try {
-            model_capabilities = new JSONObject(new JSONTokener(mcs));
-        } catch (JSONException e) {
-            model_capabilities = new JSONObject(true);
-        }
+        JSONObject model_capabilities = readModelCapabilities();
         try {
             JSONArray production_models = new JSONArray(new JSONTokener(pms));
             // got through all the selected models to find which one has the wanted usage flag switched on
@@ -117,15 +114,18 @@ public class LLM {
                     final String api_key = row.optString("api_key", "");
                     final int max_tokens = Integer.parseInt(row.optString("max_tokens", "4096"));
                     final String model = row.optString("model", "");
-                    boolean tooling = row.optBoolean("tooling", false);
-                    if (!tooling) {
-                        final String capabilityKey = row.optString("service", "OLLAMA") + "|" + hoststub.replaceAll("/+$", "") + "|" + model;
-                        final JSONObject capabilityEntry = model_capabilities.optJSONObject(capabilityKey);
-                        tooling = capabilityEntry != null && "supported".equals(capabilityEntry.optString("tooling", ""));
-                    }
                     final LLMType type = LLMType.valueOf(row.optString("service", "OLLAMA"));
+                    boolean tooling = row.optBoolean("tooling", false);
+                    boolean thinking = row.optBoolean("thinking", false);
+                    if (!tooling || !thinking) {
+                        final JSONObject capabilityEntry = model_capabilities.optJSONObject(capabilityKey(type, hoststub, model));
+                        if (capabilityEntry != null) {
+                            if (!tooling) tooling = "supported".equals(capabilityEntry.optString("tooling", ""));
+                            if (!thinking) thinking = "supported".equals(capabilityEntry.optString("thinking", ""));
+                        }
+                    }
                     LLM llm = new LLM(hoststub, api_key, max_tokens, type);
-                    LLMModel llmmodel = new LLMModel(llm, model, tooling);
+                    LLMModel llmmodel = new LLMModel(llm, model, tooling, thinking);
                     return llmmodel;
                 }
             }
@@ -139,6 +139,47 @@ public class LLM {
     public String getHoststub() {
 		return this.hoststub;
 	}
+
+    public static String capabilityKey(final LLMType type, final String hoststub, final String model) {
+        final String normalizedType = type == null ? "" : type.name();
+        final String normalizedHoststub = hoststub == null ? "" : hoststub.replaceAll("/+$", "");
+        final String normalizedModel = model == null ? "" : model.trim();
+        return normalizedType + "|" + normalizedHoststub + "|" + normalizedModel;
+    }
+
+    private static JSONObject readModelCapabilities() {
+        final Switchboard sb = Switchboard.getSwitchboard();
+        if (sb == null) return new JSONObject(true);
+        final String capabilitiesJson = sb.getConfig(MODEL_CAPABILITIES_CONFIG, "{}");
+        try {
+            return new JSONObject(new JSONTokener(capabilitiesJson));
+        } catch (JSONException e) {
+            return new JSONObject(true);
+        }
+    }
+
+    public static boolean isCapabilitySupported(final LLMType type, final String hoststub, final String model, final String capabilityName) {
+        if (capabilityName == null || capabilityName.isEmpty()) return false;
+        final JSONObject modelCapabilities = readModelCapabilities();
+        final JSONObject capabilityEntry = modelCapabilities.optJSONObject(capabilityKey(type, hoststub, model));
+        return capabilityEntry != null && "supported".equalsIgnoreCase(capabilityEntry.optString(capabilityName, ""));
+    }
+
+    public static void applyNoThinkingParameters(final JSONObject data) {
+        if (data == null) return;
+        try {
+            data.put("reasoning_effort", "none");
+            data.put("enable_thinking", false);
+        } catch (JSONException e) {
+        }
+    }
+
+    public void applyNoThinkingParametersIfNeeded(final String model, final JSONObject data) {
+        final String normalizedModel = model == null ? "" : model.toLowerCase();
+        if (normalizedModel.contains("qwen3.5") || isCapabilitySupported(this.type, this.hoststub, model, "thinking")) {
+            applyNoThinkingParameters(data);
+        }
+    }
 
 
     // API Helper Methods
@@ -287,11 +328,7 @@ public class LLM {
             data.put("messages", context);
             data.put("stop", new JSONArray(STOPTOKENS));
             data.put("stream", false);
-            
-            if (model.toLowerCase().contains("qwen3.5")) { // we don't think
-                data.put("reasoning_effort", "none");
-                data.put("enable_thinking", false);
-            }
+            applyNoThinkingParametersIfNeeded(model, data);
 
             if (schema != null) {
                 System.out.println(schema.toString());

@@ -88,11 +88,6 @@ public final class ToolCallProtocol {
         try {
             final JSONObject prepared = body == null ? new JSONObject(true) : new JSONObject(body.toString());
             if (forceStream) prepared.put("stream", true);
-            final String model = prepared.optString("model", "");
-            if (model.toLowerCase().contains("qwen3.5")) {
-                prepared.put("reasoning_effort", "none");
-                prepared.put("enable_thinking", false);
-            }
             if (toolingEnabled) net.yacy.ai.ToolProvider.ensureTools(prepared);
             return prepared;
         } catch (JSONException e) {
@@ -123,6 +118,9 @@ public final class ToolCallProtocol {
      */
     public static int proxyToolLifecycle(ServletOutputStream out, LLM.LLMModel llm4Chat, JSONObject originalBody, JSONArray messages, JSONObject initialMetadata) throws IOException {
         final JSONObject preparedBody = prepareToolRequestBody(originalBody, false, llm4Chat != null && llm4Chat.tooling);
+        if (llm4Chat != null && llm4Chat.thinking) {
+            LLM.applyNoThinkingParameters(preparedBody);
+        }
         final HttpURLConnection conn = openChatCompletionConnection(llm4Chat, preparedBody);
         final int status = conn.getResponseCode();
         //final String message = conn.getResponseMessage();
@@ -284,6 +282,9 @@ public final class ToolCallProtocol {
 
                 // Build follow-up completion request from original body template.
                 final JSONObject followup = prepareToolRequestBody(originalBody, true, llm4Chat != null && llm4Chat.tooling);
+                if (llm4Chat != null && llm4Chat.thinking) {
+                    LLM.applyNoThinkingParameters(followup);
+                }
                 followup.put("messages", newMessages);
                 final HttpURLConnection followConn = openChatCompletionConnection(llm4Chat, followup);
                 if (followConn.getResponseCode() != 200) {

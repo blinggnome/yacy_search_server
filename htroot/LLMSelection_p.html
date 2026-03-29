@@ -12,31 +12,58 @@
       let availableModels = [];
 
       const downloadActivities = new Map();
+      const testActivities = new Map();
       let activeDownloadCount = 0;
       const beforeUnloadHandler = event => {
+        const hasActiveTests = hasRunningCapabilityTests();
+        const hasActiveDownloads = activeDownloadCount > 0;
+        if (!hasActiveTests && !hasActiveDownloads) {
+          return;
+        }
         event.preventDefault();
-        event.returnValue = "Model downloads are still running. Please wait until they finish.";
+        event.returnValue = hasActiveTests
+          ? "Production model tests are still running. Please wait until they finish."
+          : "Model downloads are still running. Please wait until they finish.";
       };
       // Localization-friendly test strings and hints (translate/tune as needed)
       const TEST_STRINGS = {
         toolingEndpointPath: "/v1/chat/completions", // Endpoint used to probe tooling capability on OpenAI-compatible APIs
+        thinkingUserMessage: "Hello", // User prompt for thinking capability test
         toolingSystemMessage: "You are a home assistant.", // System prompt for tooling capability test
         toolingUserMessage: "Switch on the light", // User prompt for tooling capability test
         visionSystemMessage: "you read out images", // System prompt for vision capability test
         visionUserMessage: "what is in the image?", // User prompt for vision capability test
         visionExpectedText: "42", // Expected mention in LLM response when reading the test image
-        visionTestImagePath: "env/grafics/llmtest.png" // Image used for the vision capability test
+        visionTestImagePath: "env/grafics/llmtest.png", // Image used for the vision capability test
+        formatSystemMessage: "You are a mood classifier. Identify the mood of the request."
       };
 
-      const PRODUCTION_MODEL_TOTAL_COLUMNS = 15;
+      const FORMAT_TEST_CASES = [
+        { text: "I hate programming", expectedMood: "angry" },
+        { text: "I love programming", expectedMood: "happy" },
+        { text: "Wait, that worked perfectly?", expectedMood: "surprised" }
+      ];
+
+      const FORMAT_TEST_SCHEMA = {
+        title: "Classifier",
+        type: "object",
+        properties: {
+          mood: { type: "literal", enum: ["surprised", "angry", "happy"] }
+        },
+        required: ["mood"]
+      };
+
+      const PRODUCTION_MODEL_TOTAL_COLUMNS = 17;
       const PRODUCTION_MODEL_MODEL_COLUMN_INDEX = 1;
       const PRODUCTION_MODEL_USAGE_COLUMN_START = 5;
       const PRODUCTION_MODEL_USAGE_COLUMN_END = 11; // including
       const PRODUCTION_MODEL_FEATURE_COLUMN_START = 12;
-      const PRODUCTION_MODEL_FEATURE_COLUMN_END = 13; // including
+      const PRODUCTION_MODEL_FEATURE_COLUMN_END = 15; // including
       const PRODUCTION_MODEL_ACTION_COLUMN_INDEX = PRODUCTION_MODEL_TOTAL_COLUMNS - 1;
-      const PRODUCTION_MODEL_TOOLING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START;
-      const PRODUCTION_MODEL_VISION_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 1;
+      const PRODUCTION_MODEL_THINKING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START;
+      const PRODUCTION_MODEL_TOOLING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 1;
+      const PRODUCTION_MODEL_VISION_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 2;
+      const PRODUCTION_MODEL_FORMAT_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 3;
       const PRODUCTION_MODEL_ENABLED_USAGE_COLUMNS = new Set([
         6,  // chat
         11  // tldr
@@ -56,8 +83,10 @@
         "qapairs",
         "tldr",
 
+        "thinking",
         "tooling",
-        "vision"
+        "vision",
+        "format"
       ];
       const PRODUCTION_MODEL_SUBMIT_URL = "LLMSelection_p.html";
       const TOOLING_EXPECTED_FUNCTION_NAME = "lightswitch";
@@ -86,7 +115,7 @@
       ];
 	  
       const MODEL_TABLE_HEADERS = ["Model", "Ranking", "Size", "Description", "Provider", "License", "Actions"];
-      const AVAILABLE_MODEL_TABLE_HEADERS = ["Model", "Ranking", "Size", "Description", "Provider", "License", "Tooling", "Vision", "Actions"];
+      const AVAILABLE_MODEL_TABLE_HEADERS = ["Model", "Ranking", "Size", "Description", "Provider", "License", "Thinking", "Tooling", "Vision", "Format", "Actions"];
       const RECOMMENDED_MODEL_MAP = new Map(
         RECOMMENDED_MODELS.map(([name, ranking, size, description, provider, license]) => [
           name,
@@ -143,8 +172,10 @@
         if (!persistedModelCapabilities[key] || typeof persistedModelCapabilities[key] !== "object") {
             persistedModelCapabilities[key] = {};
         }
+        persistedModelCapabilities[key].thinking = normalizeCapabilityStatus(persistedModelCapabilities[key].thinking);
         persistedModelCapabilities[key].tooling = normalizeCapabilityStatus(persistedModelCapabilities[key].tooling);
         persistedModelCapabilities[key].vision = normalizeCapabilityStatus(persistedModelCapabilities[key].vision);
+        persistedModelCapabilities[key].format = normalizeCapabilityStatus(persistedModelCapabilities[key].format);
         return persistedModelCapabilities[key];
       }
 
@@ -152,11 +183,13 @@
         const key = modelCapabilityKey(service, hoststub, modelName);
         const entry = key ? persistedModelCapabilities[key] : null;
         if (!entry || typeof entry !== "object") {
-          return { tooling: "unknown", vision: "unknown" };
+          return { thinking: "unknown", tooling: "unknown", vision: "unknown", format: "unknown" };
         }
         return {
+          thinking: normalizeCapabilityStatus(entry.thinking),
           tooling: normalizeCapabilityStatus(entry.tooling),
-          vision: normalizeCapabilityStatus(entry.vision)
+          vision: normalizeCapabilityStatus(entry.vision),
+          format: normalizeCapabilityStatus(entry.format)
         };
       }
 
@@ -271,11 +304,17 @@
        ***/
       
       function updateBeforeUnloadGuard() {
-        if (activeDownloadCount > 0) {
+        if (activeDownloadCount > 0 || hasRunningCapabilityTests()) {
           window.addEventListener("beforeunload", beforeUnloadHandler);
         } else {
           window.removeEventListener("beforeunload", beforeUnloadHandler);
         }
+      }
+
+      function hasRunningCapabilityTests() {
+        return !!document.querySelector(
+          'tr[data-thinking-test-in-flight="true"], tr[data-tooling-test-in-flight="true"], tr[data-vision-test-in-flight="true"], tr[data-format-test-in-flight="true"]'
+        );
       }
 
       function getDownloadActivityElements() {
@@ -283,6 +322,96 @@
           container: document.getElementById("downloadActivityContainer"),
           list: document.getElementById("downloadActivityList")
         };
+      }
+
+      function getTestActivityElements() {
+        return {
+          container: document.getElementById("testActivityContainer"),
+          list: document.getElementById("testActivityList")
+        };
+      }
+
+      function addTestActivity(modelName, testName) {
+        const { container, list } = getTestActivityElements();
+        if (!container || !list || !modelName || !testName) return null;
+
+        const activityId = `test_${modelName}`;
+        const existing = testActivities.get(activityId);
+        if (existing) {
+          existing.activeTests.add(testName);
+          updateTestActivitySubtitle(existing);
+          return activityId;
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "test-activity";
+        wrapper.dataset.activityId = activityId;
+        wrapper.style.marginBottom = "8px";
+        wrapper.style.padding = "8px";
+        wrapper.style.border = "1px solid #ddd";
+        wrapper.style.borderRadius = "4px";
+        wrapper.style.backgroundColor = "#f8f8f8";
+
+        const title = document.createElement("div");
+        title.className = "test-activity-title";
+        title.textContent = `Testing ${modelName}`;
+        title.style.fontWeight = "bold";
+        title.style.marginBottom = "4px";
+        wrapper.appendChild(title);
+
+        const progress = document.createElement("progress");
+        progress.max = 100;
+        progress.style.width = "100%";
+        progress.removeAttribute("value");
+        progress.setAttribute("aria-busy", "true");
+        wrapper.appendChild(progress);
+
+        const subtitle = document.createElement("div");
+        subtitle.className = "test-activity-subtitle";
+        subtitle.style.fontSize = "0.9em";
+        subtitle.style.marginTop = "4px";
+        wrapper.appendChild(subtitle);
+
+        list.appendChild(wrapper);
+        container.style.display = "block";
+        const activity = {
+          wrapper,
+          subtitle,
+          activeTests: new Set([testName])
+        };
+        updateTestActivitySubtitle(activity);
+        testActivities.set(activityId, activity);
+        return activityId;
+      }
+
+      function updateTestActivitySubtitle(activity) {
+        if (!activity || !activity.subtitle) return;
+        const names = Array.from(activity.activeTests);
+        activity.subtitle.textContent = names.length <= 1
+          ? `${names[0]} test in progress...`
+          : `${names.join(", ")} tests in progress...`;
+      }
+
+      function removeTestActivity(activityId, testName) {
+        const activity = testActivities.get(activityId);
+        if (!activity) return;
+        if (testName) {
+          activity.activeTests.delete(testName);
+        }
+        if (activity.activeTests.size > 0) {
+          updateTestActivitySubtitle(activity);
+          return;
+        }
+        if (activity.wrapper && activity.wrapper.parentNode) {
+          activity.wrapper.parentNode.removeChild(activity.wrapper);
+        }
+        if (testActivities.has(activityId)) {
+          testActivities.delete(activityId);
+        }
+        const { container, list } = getTestActivityElements();
+        if (container && list && !list.hasChildNodes()) {
+          container.style.display = "none";
+        }
       }
 
       function addDownloadActivity(modelName) {
@@ -464,8 +593,10 @@
             description: info.description || "",
             provider: info.provider || "",
             license: info.license || "",
+            thinking: capabilityStatusLabel(capabilities.thinking),
             tooling: capabilityStatusLabel(capabilities.tooling),
             vision: capabilityStatusLabel(capabilities.vision),
+            format: capabilityStatusLabel(capabilities.format),
             renderActions: () => createAvailableModelActionButtons(service, id)
           });
         });
@@ -539,8 +670,10 @@
                 row.description || "",
                 row.provider || "",
                 row.license || "",
+                row.thinking || "?",
                 row.tooling || "?",
-                row.vision || "?"
+                row.vision || "?",
+                row.format || "?"
               ]
             : [
                 row.model || "",
@@ -720,8 +853,10 @@
         });
 
         ensureProductionRowUsageCells(targetRow, !hadRowsBeforeInsert);
+        setThinkingFlagForRow(targetRow, persistedCaps.thinking);
         setToolingFlagForRow(targetRow, persistedCaps.tooling);
         setVisionFlagForRow(targetRow, persistedCaps.vision);
+        setFormatFlagForRow(targetRow, persistedCaps.format);
         ensureProductionRowActionButton(targetRow);
         persistProductionModels();
         scheduleCapabilityVerificationForRow(targetRow, persistedCaps);
@@ -757,11 +892,18 @@
         const apikey = row.cells[3] ? row.cells[3].textContent.trim() : "";
         if (!service || !modelName || !hoststub) return;
         const statuses = capabilityStatuses || getPersistedCapabilitiesForModel(service, hoststub, modelName);
+        if (statuses.thinking === "unknown") {
+          triggerThinkingCapabilityVerification(row, { service, hoststub, modelName, apikey });
+          return;
+        }
         if (statuses.tooling === "unknown") {
           triggerToolingCapabilityVerification(row, { service, hoststub, modelName, apikey });
         }
         if (statuses.vision === "unknown") {
           triggerVisionCapabilityVerification(row, { service, hoststub, modelName, apikey });
+        }
+        if (statuses.format === "unknown") {
+          triggerFormatCapabilityVerification(row, { service, hoststub, modelName, apikey });
         }
       }
 
@@ -969,6 +1111,140 @@
         updateAvailableModelButtons();
       }
 
+      function maybeApplyNoThinkingParameters(service, hoststub, modelName, payload) {
+        if (!payload) return payload;
+        const capabilities = getPersistedCapabilitiesForModel(service, hoststub, modelName);
+        if (capabilities.thinking === "supported") {
+          payload.reasoning_effort = "none";
+          payload.enable_thinking = false;
+        }
+        return payload;
+      }
+
+      function buildThinkingTestPayload(modelName) {
+        return {
+          model: modelName,
+          temperature: 0.1,
+          max_tokens: 64,
+          messages: [
+            { role: "user", content: TEST_STRINGS.thinkingUserMessage }
+          ],
+          stream: true
+        };
+      }
+
+      function chunkContainsThinkingTokens(chunkText) {
+        if (!chunkText) return false;
+        return /<think\b/i.test(chunkText)
+          || /"reasoning_content"\s*:/i.test(chunkText)
+          || /"reasoning"\s*:/i.test(chunkText)
+          || /"thinking"\s*:/i.test(chunkText);
+      }
+
+      function setThinkingFlagForRow(row, status) {
+        if (!row || row.cells.length <= PRODUCTION_MODEL_THINKING_COLUMN_INDEX) {
+          return;
+        }
+        const cell = row.cells[PRODUCTION_MODEL_THINKING_COLUMN_INDEX];
+        if (!cell) return;
+        cell.textContent = capabilityStatusLabel(status);
+      }
+
+      function triggerThinkingCapabilityVerification(row, { service, hoststub, modelName, apikey }) {
+        if (!row) return;
+        const normalizedHoststub = (hoststub || "").trim();
+        if (!normalizedHoststub || !modelName) {
+          return;
+        }
+        if (row.dataset.thinkingTestInFlight === "true") {
+          return;
+        }
+        row.dataset.thinkingTestInFlight = "true";
+        const activityId = addTestActivity(modelName, "thinking");
+        updateBeforeUnloadGuard();
+        runThinkingCapabilityTest(service, normalizedHoststub, modelName, apikey)
+          .then(success => {
+            const rowStillMounted = !!(document && document.body && document.body.contains(row));
+            setPersistedCapability(service, normalizedHoststub, modelName, "thinking", success ? "supported" : "unsupported");
+            if (!rowStillMounted) {
+              persistProductionModels();
+              return;
+            }
+            setThinkingFlagForRow(row, success ? "supported" : "unsupported");
+            persistProductionModels();
+            updateAvailableModelCapabilityCells(service, normalizedHoststub, modelName);
+            scheduleCapabilityVerificationForRow(row, getPersistedCapabilitiesForModel(service, normalizedHoststub, modelName));
+          })
+          .catch(error => {
+            if (isCapabilityUnsupportedError(error)) {
+              setPersistedCapability(service, normalizedHoststub, modelName, "thinking", "unsupported");
+              setThinkingFlagForRow(row, "unsupported");
+              persistProductionModels();
+              updateAvailableModelCapabilityCells(service, normalizedHoststub, modelName);
+              scheduleCapabilityVerificationForRow(row, getPersistedCapabilitiesForModel(service, normalizedHoststub, modelName));
+              return;
+            }
+            console.warn(`Thinking capability check failed for model "${modelName}".`, error);
+          })
+          .finally(() => {
+            delete row.dataset.thinkingTestInFlight;
+            if (activityId) removeTestActivity(activityId, "thinking");
+            updateBeforeUnloadGuard();
+          });
+      }
+
+      async function runThinkingCapabilityTest(service, hoststub, modelName, apikey) {
+        const endpointBase = hoststub.replace(/\/+$/, "");
+        if (!endpointBase) {
+          return false;
+        }
+        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const headers = { "Content-Type": "application/json" };
+        if (apikey) {
+          headers.Authorization = `Bearer ${apikey}`;
+        }
+        const controller = new AbortController();
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(buildThinkingTestPayload(modelName)),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const error = new Error(`HTTP status ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+        if (!response.body) {
+          return false;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let detectedThinking = false;
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const chunkText = decoder.decode(value, { stream: true });
+            if (chunkContainsThinkingTokens(chunkText)) {
+              detectedThinking = true;
+              controller.abort();
+              break;
+            }
+          }
+        } catch (error) {
+          if (!(detectedThinking && error && error.name === "AbortError")) {
+            throw error;
+          }
+        } finally {
+          try {
+            reader.releaseLock();
+          } catch (error) {
+          }
+        }
+        return detectedThinking;
+      }
+
       /**
        * Tooling capability check
        */
@@ -982,7 +1258,9 @@
           return;
         }
         row.dataset.toolingTestInFlight = "true";
-        runToolingCapabilityTest(normalizedHoststub, modelName, apikey)
+        const activityId = addTestActivity(modelName, "tooling");
+        updateBeforeUnloadGuard();
+        runToolingCapabilityTest(service, normalizedHoststub, modelName, apikey)
           .then(success => {
             const rowStillMounted = !!(document && document.body && document.body.contains(row));
             setPersistedCapability(service, normalizedHoststub, modelName, "tooling", success ? "supported" : "unsupported");
@@ -1006,10 +1284,12 @@
           })
           .finally(() => {
             delete row.dataset.toolingTestInFlight;
+            if (activityId) removeTestActivity(activityId, "tooling");
+            updateBeforeUnloadGuard();
           });
       }
 
-      async function runToolingCapabilityTest(hoststub, modelName, apikey) {
+      async function runToolingCapabilityTest(service, hoststub, modelName, apikey) {
         const endpointBase = hoststub.replace(/\/+$/, "");
         if (!endpointBase) {
           return false;
@@ -1019,7 +1299,7 @@
         if (apikey) {
           headers.Authorization = `Bearer ${apikey}`;
         }
-        const payload = buildToolingTestPayload(modelName);
+        const payload = buildToolingTestPayload(service, hoststub, modelName);
         const response = await fetch(targetUrl, {
           method: "POST",
           headers,
@@ -1034,8 +1314,8 @@
         return toolingResponseIncludesExpectedToolCall(result);
       }
 
-      function buildToolingTestPayload(modelName) {
-        return {
+      function buildToolingTestPayload(service, hoststub, modelName) {
+        return maybeApplyNoThinkingParameters(service, hoststub, modelName, {
           model: modelName,
           temperature: 0.1,
           max_tokens: 1024,
@@ -1063,7 +1343,7 @@
             }
           }],
           stream: false
-        };
+        });
       }
 
       function toolingResponseIncludesExpectedToolCall(response) {
@@ -1118,7 +1398,9 @@
           return;
         }
         row.dataset.visionTestInFlight = "true";
-        runVisionCapabilityTest(normalizedHoststub, modelName, apikey)
+        const activityId = addTestActivity(modelName, "vision");
+        updateBeforeUnloadGuard();
+        runVisionCapabilityTest(service, normalizedHoststub, modelName, apikey)
           .then(success => {
             const rowStillMounted = !!(document && document.body && document.body.contains(row));
             setPersistedCapability(service, normalizedHoststub, modelName, "vision", success ? "supported" : "unsupported");
@@ -1135,10 +1417,12 @@
           })
           .finally(() => {
             delete row.dataset.visionTestInFlight;
+            if (activityId) removeTestActivity(activityId, "vision");
+            updateBeforeUnloadGuard();
           });
       }
 
-      async function runVisionCapabilityTest(hoststub, modelName, apikey) {
+      async function runVisionCapabilityTest(service, hoststub, modelName, apikey) {
         const endpointBase = hoststub.replace(/\/+$/, "");
         if (!endpointBase) {
           return false;
@@ -1149,7 +1433,7 @@
           headers.Authorization = `Bearer ${apikey}`;
         }
         const base64Image = await loadVisionTestImageBase64();
-        const payload = buildVisionTestPayload(modelName, base64Image);
+        const payload = buildVisionTestPayload(service, hoststub, modelName, base64Image);
         const response = await fetch(targetUrl, {
           method: "POST",
           headers,
@@ -1164,8 +1448,8 @@
         return visionResponseContainsExpectedAnswer(result);
       }
 
-      function buildVisionTestPayload(modelName, base64Image) {
-        return {
+      function buildVisionTestPayload(service, hoststub, modelName, base64Image) {
+        return maybeApplyNoThinkingParameters(service, hoststub, modelName, {
           model: modelName,
           temperature: 0.1,
           max_tokens: 512,
@@ -1184,7 +1468,7 @@
               ]
             }
           ]
-        };
+        });
       }
 
       function visionResponseContainsExpectedAnswer(response) {
@@ -1276,6 +1560,157 @@
         cell.textContent = capabilityStatusLabel(status);
       }
 
+      function triggerFormatCapabilityVerification(row, { service, hoststub, modelName, apikey }) {
+        if (!row) return;
+        const normalizedHoststub = (hoststub || "").trim();
+        if (!normalizedHoststub || !modelName) {
+          return;
+        }
+        if (row.dataset.formatTestInFlight === "true") {
+          return;
+        }
+        row.dataset.formatTestInFlight = "true";
+        const activityId = addTestActivity(modelName, "format");
+        updateBeforeUnloadGuard();
+        runFormatCapabilityTest(service, normalizedHoststub, modelName, apikey)
+          .then(success => {
+            const rowStillMounted = !!(document && document.body && document.body.contains(row));
+            setPersistedCapability(service, normalizedHoststub, modelName, "format", success ? "supported" : "unsupported");
+            if (!rowStillMounted) {
+              persistProductionModels();
+              return;
+            }
+            setFormatFlagForRow(row, success ? "supported" : "unsupported");
+            persistProductionModels();
+            updateAvailableModelCapabilityCells(service, normalizedHoststub, modelName);
+          })
+          .catch(error => {
+            if (isCapabilityUnsupportedError(error)) {
+              setPersistedCapability(service, normalizedHoststub, modelName, "format", "unsupported");
+              setFormatFlagForRow(row, "unsupported");
+              persistProductionModels();
+              updateAvailableModelCapabilityCells(service, normalizedHoststub, modelName);
+              return;
+            }
+            console.warn(`Format capability check failed for model "${modelName}".`, error);
+          })
+          .finally(() => {
+            delete row.dataset.formatTestInFlight;
+            if (activityId) removeTestActivity(activityId, "format");
+            updateBeforeUnloadGuard();
+          });
+      }
+
+      async function runFormatCapabilityTest(service, hoststub, modelName, apikey) {
+        const endpointBase = hoststub.replace(/\/+$/, "");
+        if (!endpointBase) {
+          return false;
+        }
+        for (const testCase of FORMAT_TEST_CASES) {
+          const mood = await runSingleFormatCapabilityTest(service, endpointBase, modelName, apikey, testCase.text);
+          if (mood !== testCase.expectedMood) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      async function runSingleFormatCapabilityTest(service, endpointBase, modelName, apikey, inputText) {
+        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const headers = { "Content-Type": "application/json" };
+        if (apikey) {
+          headers.Authorization = `Bearer ${apikey}`;
+        }
+        const payload = buildFormatTestPayload(service, endpointBase, modelName, inputText);
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const error = new Error(`HTTP status ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+        const result = await response.json();
+        return extractMoodFromFormatResponse(result);
+      }
+
+      function buildFormatTestPayload(service, hoststub, modelName, inputText) {
+        return maybeApplyNoThinkingParameters(service, hoststub, modelName, {
+          model: modelName,
+          temperature: 0.1,
+          max_tokens: 128,
+          messages: [
+            { role: "system", content: TEST_STRINGS.formatSystemMessage },
+            { role: "user", content: inputText }
+          ],
+          stream: false,
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              strict: true,
+              schema: FORMAT_TEST_SCHEMA
+            }
+          }
+        });
+      }
+
+      function extractMoodFromFormatResponse(response) {
+        const candidates = [];
+        if (response && Array.isArray(response.choices)) {
+          response.choices.forEach(choice => {
+            if (choice && choice.message) {
+              candidates.push(choice.message);
+            }
+          });
+        }
+        if (response && response.message) {
+          candidates.push(response.message);
+        }
+        for (const message of candidates) {
+          const parsedMood = extractMoodFromMessage(message);
+          if (parsedMood) {
+            return parsedMood;
+          }
+        }
+        return "";
+      }
+
+      function extractMoodFromMessage(message) {
+        if (!message) return "";
+        if (message.parsed && typeof message.parsed === "object") {
+          const mood = normalizeMoodValue(message.parsed.mood);
+          if (mood) return mood;
+        }
+        if (message.content && typeof message.content === "object" && !Array.isArray(message.content)) {
+          const mood = normalizeMoodValue(message.content.mood);
+          if (mood) return mood;
+        }
+        const normalizedText = normalizeMessageText(message);
+        if (!normalizedText) return "";
+        try {
+          const parsed = JSON.parse(normalizedText);
+          return normalizeMoodValue(parsed && parsed.mood);
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function normalizeMoodValue(value) {
+        const mood = typeof value === "string" ? value.trim().toLowerCase() : "";
+        return mood === "angry" || mood === "happy" || mood === "surprised" ? mood : "";
+      }
+
+      function setFormatFlagForRow(row, status) {
+        if (!row || row.cells.length <= PRODUCTION_MODEL_FORMAT_COLUMN_INDEX) {
+          return;
+        }
+        const cell = row.cells[PRODUCTION_MODEL_FORMAT_COLUMN_INDEX];
+        if (!cell) return;
+        cell.textContent = capabilityStatusLabel(status);
+      }
+
       function updateAvailableModelCapabilityCells(service, hoststub, modelName) {
         const container = document.getElementById("availableModelsContainer");
         if (!container) return;
@@ -1283,8 +1718,10 @@
         container.querySelectorAll("tbody tr").forEach(row => {
           const modelCell = row.cells && row.cells[0];
           if (!modelCell || modelCell.textContent.trim() !== modelName) return;
-          if (row.cells[6]) row.cells[6].textContent = capabilityStatusLabel(capabilities.tooling);
-          if (row.cells[7]) row.cells[7].textContent = capabilityStatusLabel(capabilities.vision);
+          if (row.cells[6]) row.cells[6].textContent = capabilityStatusLabel(capabilities.thinking);
+          if (row.cells[7]) row.cells[7].textContent = capabilityStatusLabel(capabilities.tooling);
+          if (row.cells[8]) row.cells[8].textContent = capabilityStatusLabel(capabilities.vision);
+          if (row.cells[9]) row.cells[9].textContent = capabilityStatusLabel(capabilities.format);
         });
       }
 
@@ -1415,6 +1852,9 @@
     <fieldset id="availableModelsContainer" style="display:none"><a name="availableModels"></a></fieldset>
 
     <fieldset id="productionModelsContainer" style="display: block;"><a name="productionModels"></a><legend>Production Models Matrix</legend>
+        <div id="testActivityContainer" style="display:none; margin-bottom:12px;">
+            <div id="testActivityList"></div>
+        </div>
         <table class="table table-striped" id="productionModelsTable">
             <thead class="thead-dark">
                 <tr>
@@ -1432,8 +1872,10 @@
                     <td class="narrow">qa-pairs<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model can be used to produce query-answer pairs which enhance search from chat prompts</span></span></td>
                     <td class="narrow">tldr-shortener<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model is used to make summaries from web content</span></span></td>
                     
-                    <td>tooling</td>
-                    <td>vision</td>
+                    <td class="narrow">thinking<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>we detect thinking only to be able to suppress thinking. thinking is not used in YaCy</span></span></td>
+                    <td class="narrow">tooling<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>tooling is required for agentic abilities.</span></span></td>
+                    <td class="narrow">vision<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>this enables image recognition in the chat</span></span></td>
+                    <td class="narrow">format<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>this is required for classification</span></span></td>
                     <td>Actions</td>
                 </tr>
             </thead>
@@ -1454,8 +1896,10 @@
                 <td><input type="checkbox" #(qapairs)#::checked=true#(/qapairs)# disabled="disabled"></td>
                 <td><input type="checkbox" #(tldr)#::checked=true#(/tldr)#></td>
                 
+                <td>#[thinking]#</td>
                 <td>#[tooling]#</td>
                 <td>#[vision]#</td>
+                <td>#[format]#</td>
                 <td></td>
             </tr>
         #{/productionmodels}#

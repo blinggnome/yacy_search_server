@@ -52,11 +52,15 @@ public class LLMSelection_p {
             final JSONObject entry = source.optJSONObject(key);
             final JSONObject normalizedEntry = new JSONObject(true);
             if (entry != null) {
+                normalizedEntry.put("thinking", normalizeCapabilityStatus(entry.opt("thinking")));
                 normalizedEntry.put("tooling", normalizeCapabilityStatus(entry.opt("tooling")));
                 normalizedEntry.put("vision", normalizeCapabilityStatus(entry.opt("vision")));
+                normalizedEntry.put("format", normalizeCapabilityStatus(entry.opt("format")));
             } else {
+                normalizedEntry.put("thinking", "unknown");
                 normalizedEntry.put("tooling", "unknown");
                 normalizedEntry.put("vision", "unknown");
+                normalizedEntry.put("format", "unknown");
             }
             normalized.put(key, normalizedEntry);
         }
@@ -88,8 +92,10 @@ public class LLMSelection_p {
         normalized.put("qapairs", false);
         normalized.put("tldr", row.optBoolean("tldr", false));
 
+        normalized.put("thinking", row.optBoolean("thinking", false));
         normalized.put("tooling", row.optBoolean("tooling", false));
         normalized.put("vision", row.optBoolean("vision", false));
+        normalized.put("format", row.optBoolean("format", false));
         return normalized;
     }
 
@@ -183,14 +189,22 @@ public class LLMSelection_p {
                 
                 final String key = capabilityKey(row);
                 JSONObject capabilityEntry = key.isEmpty() ? null : capabilities.optJSONObject(key);
+                String thinkingStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("thinking"));
                 String toolingStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("tooling"));
                 String visionStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("vision"));
+                String formatStatus = capabilityEntry == null ? "unknown" : normalizeCapabilityStatus(capabilityEntry.opt("format"));
+                if (row.optBoolean("thinking", false)) thinkingStatus = "supported";
                 if (row.optBoolean("tooling", false)) toolingStatus = "supported";
                 if (row.optBoolean("vision", false)) visionStatus = "supported";
+                if (row.optBoolean("format", false)) formatStatus = "supported";
+                prop.put("productionmodels_" + i + "_thinking",
+                        "supported".equals(thinkingStatus) ? "yes" : "unsupported".equals(thinkingStatus) ? "no" : "?");
                 prop.put("productionmodels_" + i + "_tooling",
                         "supported".equals(toolingStatus) ? "yes" : "unsupported".equals(toolingStatus) ? "no" : "?");
                 prop.put("productionmodels_" + i + "_vision",
                         "supported".equals(visionStatus) ? "yes" : "unsupported".equals(visionStatus) ? "no" : "?");
+                prop.put("productionmodels_" + i + "_format",
+                        "supported".equals(formatStatus) ? "yes" : "unsupported".equals(formatStatus) ? "no" : "?");
             }
             prop.put("productionmodels", production_models.length());
         } catch (JSONException e) {
@@ -206,12 +220,16 @@ public class LLMSelection_p {
                     JSONObject entry = capabilities.optJSONObject(key);
                     if (entry == null) {
                         entry = new JSONObject(true);
+                        entry.put("thinking", "unknown");
                         entry.put("tooling", "unknown");
                         entry.put("vision", "unknown");
+                        entry.put("format", "unknown");
                         capabilities.put(key, entry);
                     }
+                    if (row.optBoolean("thinking", false)) entry.put("thinking", "supported");
                     if (row.optBoolean("tooling", false)) entry.put("tooling", "supported");
                     if (row.optBoolean("vision", false)) entry.put("vision", "supported");
+                    if (row.optBoolean("format", false)) entry.put("format", "supported");
                 }
             }
             prop.putHTML("model_capabilities", capabilities.toString());
