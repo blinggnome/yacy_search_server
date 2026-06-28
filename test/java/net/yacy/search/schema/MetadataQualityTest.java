@@ -28,6 +28,28 @@ public class MetadataQualityTest {
     }
 
     @Test
+    public void testGenericYouTubeWatchPageIsStub() throws MalformedURLException {
+        final Document document = document(
+                "https://www.youtube.com/watch?v=7Djp08YT0U8",
+                Collections.singletonList("- YouTube"),
+                Collections.singletonList("Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube."),
+                "- YouTube. \n\nAbout Press Copyright Contact us Creators Advertise Developers Terms Privacy Policy & Safety How YouTube works Test new features NFL Sunday Ticket \n\n(c) 2026 Google LLC.");
+
+        assertTrue(MetadataQuality.isGenericYouTubeStub(document));
+    }
+
+    @Test
+    public void testUsefulYouTubeWatchPageIsNotStub() throws MalformedURLException {
+        final Document document = document(
+                "https://www.youtube.com/watch?v=example",
+                Collections.singletonList("A useful and specific video title"),
+                Collections.singletonList("YouTube video by Example Channel: A useful and specific video title"),
+                "");
+
+        assertFalse(MetadataQuality.isGenericYouTubeStub(document));
+    }
+
+    @Test
     public void testUsefulMetadataIsNotPoor() {
         final SolrDocument document = new SolrDocument();
         document.setField(CollectionSchema.sku.getSolrFieldName(), "https://www.youtube.com/watch?v=example");

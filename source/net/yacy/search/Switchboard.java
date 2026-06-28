@@ -3292,6 +3292,14 @@ public final class Switchboard extends serverSwitch {
                 continue docloop;
             }
 
+            if (MetadataQuality.isGenericYouTubeStub(document)) {
+                final String info = "Not Condensed Resource '" + urls + "': rejected generic YouTube metadata stub";
+                if (this.log.isInfo()) this.log.info(info);
+                removeExistingIndexDocument(in.queueEntry.url(), "generic YouTube metadata stub");
+                this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
+                continue docloop;
+            }
+
             // check content pattern must-match
             final Pattern mustmatchcontent = profile.indexContentMustMatchPattern();
             if (mustmatchcontent != CrawlProfile.MATCH_ALL_PATTERN && !mustmatchcontent.matcher(document.getTextString()).matches()) {
@@ -3453,6 +3461,13 @@ public final class Switchboard extends serverSwitch {
             removeExistingIndexDocument(url, "zero-content document, process case=" + processCase);
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected zero-content document, process case=" + processCase, -1);
+            return;
+        }
+
+        if (MetadataQuality.isGenericYouTubeStub(document)) {
+            removeExistingIndexDocument(url, "generic YouTube metadata stub, process case=" + processCase);
+            this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
+                    "rejected generic YouTube metadata stub, process case=" + processCase, -1);
             return;
         }
 
