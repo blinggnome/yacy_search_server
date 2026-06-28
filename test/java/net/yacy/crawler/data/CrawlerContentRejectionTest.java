@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNull;
 
 import java.io.File;
 import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -47,6 +48,28 @@ public class CrawlerContentRejectionTest {
                 "Research article",
                 "Useful article summary",
                 "This document contains normal content.")));
+    }
+
+    @Test
+    public void testRulesMatchRawSourceBeforeParsing() throws Exception {
+        final CrawlerContentRejection rejection = new CrawlerContentRejection(tempDirectory());
+        rejection.addRule("please sign in to verify that you may");
+
+        final byte[] source = ("<html><head><script>var ytInitialData = {\"message\":\"Please sign in to verify that you may "
+                + "access this video\"};</script></head><body>- YouTube</body></html>").getBytes(StandardCharsets.UTF_8);
+
+        assertEquals("please sign in to verify that you may", rejection.firstMatchingRule(source, "UTF-8"));
+    }
+
+    @Test
+    public void testRawSourceMatchFallsBackToUtf8ForBadCharset() throws Exception {
+        final CrawlerContentRejection rejection = new CrawlerContentRejection(tempDirectory());
+        rejection.addRule("this video is no longer available because");
+
+        final byte[] source = "This video is no longer available because the associated account was terminated."
+                .getBytes(StandardCharsets.UTF_8);
+
+        assertEquals("this video is no longer available because", rejection.firstMatchingRule(source, "bad charset"));
     }
 
     private static File tempDirectory() {

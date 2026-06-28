@@ -14,7 +14,10 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -104,6 +107,21 @@ public class CrawlerContentRejection {
         return null;
     }
 
+    public String firstMatchingRule(final byte[] source, final String charsetName) {
+        if (source == null || source.length == 0) return null;
+
+        final List<String> currentRules = getRules();
+        if (currentRules.isEmpty()) return null;
+
+        final String haystack = clean(new String(source, charset(charsetName))).toLowerCase(Locale.ROOT);
+        if (haystack.length() == 0) return null;
+
+        for (final String rule : currentRules) {
+            if (haystack.contains(rule.toLowerCase(Locale.ROOT))) return rule;
+        }
+        return null;
+    }
+
     private void reloadIfNeeded() {
         final long fileLastModified = this.file.exists() ? this.file.lastModified() : 0L;
         if (fileLastModified == this.lastModified) return;
@@ -148,6 +166,16 @@ public class CrawlerContentRejection {
 
     private static String clean(final String value) {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
+    }
+
+    private static Charset charset(final String charsetName) {
+        if (charsetName != null && charsetName.trim().length() > 0) {
+            try {
+                return Charset.forName(charsetName.trim());
+            } catch (final IllegalCharsetNameException | UnsupportedCharsetException e) {
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 
     private static String first(final String[] values) {

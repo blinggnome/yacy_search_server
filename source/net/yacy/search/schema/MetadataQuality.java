@@ -66,23 +66,6 @@ public final class MetadataQuality {
         return !hasUsableTitle && !hasUsableDescription && !hasBodyText;
     }
 
-    public static boolean isGenericYouTubeStub(final Document document) {
-        if (document == null || document.dc_source() == null) return false;
-
-        final String url = document.dc_source().toNormalform(true);
-        if (!isYouTubeWatchUrl(url)) return false;
-
-        final String title = clean(document.dc_title());
-        final String description = clean(first(document.dc_description()));
-        if (!GENERIC_YOUTUBE_TITLE.equals(title) || !GENERIC_YOUTUBE_DESCRIPTION.equals(description)) return false;
-
-        final String body = clean(document.getTextString());
-        return body.length() == 0
-                || body.equals(GENERIC_YOUTUBE_TITLE)
-                || body.contains("About Press Copyright Contact us Creators Advertise Developers Terms Privacy Policy")
-                || body.contains("How YouTube works Test new features");
-    }
-
     public static boolean isErrorPage(final Document document) {
         if (document == null) return false;
 
@@ -183,15 +166,4 @@ public final class MetadataQuality {
         return clean(title.toString());
     }
 
-    private static boolean isYouTubeWatchUrl(final String url) {
-        if (url == null) return false;
-        final String lowerUrl = url.toLowerCase(Locale.ROOT);
-        return (lowerUrl.startsWith("https://www.youtube.com/watch?")
-                || lowerUrl.startsWith("http://www.youtube.com/watch?")
-                || lowerUrl.startsWith("https://youtube.com/watch?")
-                || lowerUrl.startsWith("http://youtube.com/watch?")
-                || lowerUrl.startsWith("https://m.youtube.com/watch?")
-                || lowerUrl.startsWith("http://m.youtube.com/watch?"))
-                && lowerUrl.contains("v=");
-    }
 }
