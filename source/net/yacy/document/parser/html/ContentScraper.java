@@ -1109,6 +1109,11 @@ public class ContentScraper extends AbstractScraper implements Scraper {
             }
         }
 
+        if (this.titles.size() == 0) {
+            final String title = titleFromUrlSlug();
+            if (title.length() > 0) this.titles.add(title);
+        }
+
         // extract headline from file name
         final ArrayList<String> t = new ArrayList<>();
         t.addAll(this.titles);
@@ -1146,6 +1151,30 @@ public class ContentScraper extends AbstractScraper implements Scraper {
         }
 
         return title.substring(0, end).trim();
+    }
+
+    private String titleFromUrlSlug() {
+        if (this.root == null) return EMPTY_STRING;
+
+        String filename = this.root.getFileName();
+        if (filename.length() == 0) {
+            final String path = this.root.getPath();
+            if (path.length() <= 1) return EMPTY_STRING;
+            final String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+            final int slash = normalizedPath.lastIndexOf('/');
+            filename = slash >= 0 ? normalizedPath.substring(slash + 1) : normalizedPath;
+        }
+        if (filename.length() == 0 || filename.indexOf('.') >= 0) return EMPTY_STRING;
+
+        final String[] parts = filename.split("[-_]+");
+        final StringBuilder title = new StringBuilder(filename.length());
+        for (final String part : parts) {
+            if (part.length() == 0) continue;
+            if (title.length() > 0) title.append(' ');
+            title.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) title.append(part.substring(1));
+        }
+        return cleanLine(title.toString());
     }
 
     public String[] getHeadlines(final int i) {

@@ -296,6 +296,40 @@ public class htmlParserTest {
 
         assertEquals(title, scraper.getTitles().get(0));
     }
+
+    /**
+     * JavaScript application shells may expose no useful title, metadata or
+     * headings in the initial HTML. In that case, keep a readable URL slug title
+     * instead of returning an empty title.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testEmptyApplicationShellFallsBackToUrlSlugTitle() throws Exception {
+        final AnchorURL url = new AnchorURL("https://documents.example/en/privacy-policy");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String testhtml = "<!doctype html><html lang=\"en\"><head>"
+                + "<meta charset=\"utf-8\" />"
+                + "<title></title>"
+                + "<meta name=\"twitter:title\" />"
+                + "<meta name=\"og:site_name\" />"
+                + "</head><body><app></app><section role=\"main\" id=\"_content\"></section>"
+                + "<script src=\"/runtime.js\" defer=\"\"></script></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals("Privacy Policy", scraper.getTitles().get(0));
+        assertTrue(scraper.getDescriptions().isEmpty());
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.
