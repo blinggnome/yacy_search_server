@@ -210,7 +210,8 @@ public class htmlParser extends AbstractParser implements Parser {
             ContentScraper scraper = parseToScraper(location, documentCharset, defaultValency, valencySwitchTagNames, vocscraper, detectedcharsetcontainer, timezoneOffset, parserSourceStream, maxAnchors, maxLinks, maxBytes);
             final String rawSourceText = rawSource == null ? null : new String(rawSource, detectedcharsetcontainer[0] == null ? StandardCharsets.UTF_8 : detectedcharsetcontainer[0]);
             // parseToScraper also detects/corrects/sets charset from html content tag
-            final Document document = this.transformScraper(location, mimeType, detectedcharsetcontainer[0].name(), scraper, rawSourceText, lastModified);
+            final DigestURL documentLocation = YouTubeOEmbedMetadata.canonicalLocation(location);
+            final Document document = this.transformScraper(documentLocation, mimeType, detectedcharsetcontainer[0].name(), scraper, rawSourceText, lastModified);
             Document documentSnapshot = null;
             try {
                 // check for ajax crawling scheme (https://developers.google.com/webmasters/ajax-crawling/docs/specification)
@@ -305,6 +306,7 @@ public class htmlParser extends AbstractParser implements Parser {
 
         private static final int TIMEOUT = 5000;
         private static final String GENERIC_YOUTUBE_TITLE = "- YouTube";
+        private static final String EMBED_YOUTUBE_TITLE = "YouTube";
         private static final String GENERIC_YOUTUBE_DESCRIPTION = "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.";
         private static final Pattern ATTRIBUTED_DESCRIPTION = Pattern.compile("\"attributedDescription\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
@@ -324,12 +326,12 @@ public class htmlParser extends AbstractParser implements Parser {
         }
 
         private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions, final String rawSource) {
-            final String oembedTargetUrl = oembedTargetUrl(location);
-            if (oembedTargetUrl == null || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
+            final String canonicalVideoUrl = canonicalVideoUrl(location);
+            if (canonicalVideoUrl == null || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
             final String sourceDescription = attributedDescription(rawSource);
 
             try {
-                final String encodedUrl = URLEncoder.encode(oembedTargetUrl, StandardCharsets.UTF_8);
+                final String encodedUrl = URLEncoder.encode(canonicalVideoUrl, StandardCharsets.UTF_8);
                 final URL oembedUrl = new URL("https://www.youtube.com/oembed?format=json&url=" + encodedUrl);
                 final URLConnection connection = oembedUrl.openConnection();
                 connection.setConnectTimeout(TIMEOUT);
@@ -350,7 +352,12 @@ public class htmlParser extends AbstractParser implements Parser {
         }
 
         private static boolean canEnrich(final DigestURL location) {
-            return oembedTargetUrl(location) != null;
+            return canonicalVideoUrl(location) != null;
+        }
+
+        private static DigestURL canonicalLocation(final DigestURL location) throws MalformedURLException {
+            final String canonicalVideoUrl = canonicalVideoUrl(location);
+            return canonicalVideoUrl == null ? location : new DigestURL(canonicalVideoUrl);
         }
 
         static String attributedDescription(final String rawSource) {
@@ -364,27 +371,64 @@ public class htmlParser extends AbstractParser implements Parser {
             }
         }
 
-        private static String oembedTargetUrl(final DigestURL location) {
+        private static String canonicalVideoUrl(final DigestURL location) {
             final String host = location.getHost();
             if (host == null) return null;
             final String lowerHost = host.toLowerCase(Locale.ROOT);
-            if (!("www.youtube.com".equals(lowerHost) || "youtube.com".equals(lowerHost) || "m.youtube.com".equals(lowerHost))) return null;
-
             final String file = location.getFile();
-            if (file.startsWith("/watch?") && file.contains("v=")) return location.toNormalform(true);
+
+            if ("youtu.be".equals(lowerHost)) {
+                final String videoId = youtubeVideoIdFromPath(file, 1);
+                return videoId.length() > 0 ? "https://www.youtube.com/watch?v=" + videoId : null;
+            }
+
+            if (!("www.youtube.com".equals(lowerHost)
+                    || "youtube.com".equals(lowerHost)
+                    || "m.youtube.com".equals(lowerHost)
+                    || "www.youtube-nocookie.com".equals(lowerHost)
+                    || "youtube-nocookie.com".equals(lowerHost))) return null;
+
+            if (file.startsWith("/watch?")) {
+                final String videoId = youtubeVideoIdFromQuery(file);
+                if (videoId.length() > 0) return "https://www.youtube.com/watch?v=" + videoId;
+            }
 
             if (file.startsWith("/v/")) {
-                final String videoId = youtubeVideoIdFromLegacyEmbedPath(file);
+                final String videoId = youtubeVideoIdFromPath(file, 3);
+                if (videoId.length() > 0) return "https://www.youtube.com/watch?v=" + videoId;
+            }
+
+            if (file.startsWith("/embed/")) {
+                final String videoId = youtubeVideoIdFromPath(file, 7);
+                if (videoId.length() > 0) return "https://www.youtube.com/watch?v=" + videoId;
+            }
+
+            if (file.startsWith("/shorts/")) {
+                final String videoId = youtubeVideoIdFromPath(file, 8);
                 if (videoId.length() > 0) return "https://www.youtube.com/watch?v=" + videoId;
             }
             return null;
         }
 
-        private static String youtubeVideoIdFromLegacyEmbedPath(final String file) {
-            if (file == null || !file.startsWith("/v/")) return "";
-            final String path = file.substring(3);
+        private static String youtubeVideoIdFromPath(final String file, final int start) {
+            if (file == null || file.length() <= start) return "";
+            final String path = file.substring(start);
             final int end = firstNonVideoIdCharacter(path);
             return end <= 0 ? path : path.substring(0, end);
+        }
+
+        private static String youtubeVideoIdFromQuery(final String file) {
+            final int queryStart = file.indexOf('?');
+            if (queryStart < 0 || queryStart == file.length() - 1) return "";
+            final String query = file.substring(queryStart + 1);
+            for (final String part: query.split("&")) {
+                if (part.startsWith("v=")) {
+                    final String value = part.substring(2);
+                    final int end = firstNonVideoIdCharacter(value);
+                    return end <= 0 ? value : value.substring(0, end);
+                }
+            }
+            return "";
         }
 
         private static int firstNonVideoIdCharacter(final String value) {
@@ -401,7 +445,8 @@ public class htmlParser extends AbstractParser implements Parser {
 
         private static boolean hasGenericYouTubeMetadata(final List<String> titles, final List<String> descriptions) {
             if (titles == null || titles.isEmpty()) return false;
-            if (!GENERIC_YOUTUBE_TITLE.equals(titles.get(0))) return false;
+            final String title = titles.get(0);
+            if (!(GENERIC_YOUTUBE_TITLE.equals(title) || EMBED_YOUTUBE_TITLE.equals(title))) return false;
             if (descriptions == null || descriptions.isEmpty()) return true;
             return GENERIC_YOUTUBE_DESCRIPTION.equals(descriptions.get(0));
         }
