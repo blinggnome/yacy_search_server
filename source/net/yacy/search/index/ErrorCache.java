@@ -118,6 +118,10 @@ public class ErrorCache {
                     if (olddoc == null ||
                         olddoc.getFieldValue(CollectionSchema.httpstatus_i.getSolrFieldName()) == null ||
                         ((Integer) olddoc.getFieldValue(CollectionSchema.httpstatus_i.getSolrFieldName())) == 200) {
+                        if (httpStatusRemovesExistingDocument(httpcode) && olddoc != null) {
+                            this.sb.index.fulltext().remove(url.hash());
+                            log.info("Removed previously indexed resource '" + url.toNormalform(true) + "': recrawl returned HTTP status " + httpcode);
+                        }
                         SolrInputDocument errorDoc = failDoc.toSolr(this.sb.index.fulltext().getDefaultConfiguration());
                         this.sb.index.fulltext().getDefaultConnector().add(errorDoc);
                     }
@@ -130,6 +134,10 @@ public class ErrorCache {
             }
             checkStackSize();
         }
+    }
+
+    static boolean httpStatusRemovesExistingDocument(final int httpcode) {
+        return httpcode >= 400;
     }
     
     private void checkStackSize() {
@@ -212,5 +220,4 @@ public class ErrorCache {
     }
 
 }
-
 

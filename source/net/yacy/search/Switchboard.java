@@ -3258,6 +3258,7 @@ public final class Switchboard extends serverSwitch {
             // check indexing denied flags
             if (document.indexingDenied() && profile.obeyHtmlRobotsNoindex() && !this.isIntranetMode()) {
                 if (this.log.isInfo()) this.log.info("Not Condensed Resource '" + urls + "': denied by document-attached noindexing rule");
+                removeExistingIndexDocument(in.queueEntry.url(), "document-attached noindexing rule");
                 // create a new errorURL DB entry
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, "denied by document-attached noindexing rule", -1);
                 continue docloop;
@@ -3406,6 +3407,7 @@ public final class Switchboard extends serverSwitch {
 
         if (condenser == null || (document.indexingDenied() && profile.obeyHtmlRobotsNoindex())) {
             //if (this.log.isInfo()) log.logInfo("Not Indexed Resource '" + queueEntry.url().toNormalform(false, true) + "': denied by rule in document, process case=" + processCase);
+            removeExistingIndexDocument(url, "document rule denied indexing, process case=" + processCase);
             // create a new errorURL DB entry
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, "denied by rule in document, process case=" + processCase, -1);
             return;
@@ -3534,6 +3536,24 @@ public final class Switchboard extends serverSwitch {
             return MetadataQuality.existingIsBetter(existing, document);
         } catch (final IOException e) {
             return false;
+        }
+    }
+
+    private void removeExistingIndexDocument(final DigestURL url, final String reason) {
+        if (url == null || this.index == null || this.index.fulltext().getDefaultConnector() == null) {
+            return;
+        }
+        try {
+            final SolrDocument existing = this.index.fulltext().getDefaultConnector().getDocumentById(
+                    ASCII.String(url.hash()),
+                    CollectionSchema.httpstatus_i.getSolrFieldName());
+            if (existing == null) {
+                return;
+            }
+            this.index.fulltext().remove(url.hash());
+            this.log.info("Removed previously indexed resource '" + url.toNormalform(true) + "': " + reason);
+        } catch (final IOException e) {
+            this.log.warn("Failed to check existing indexed resource '" + url.toNormalform(true) + "' before removal: " + e.getMessage());
         }
     }
 

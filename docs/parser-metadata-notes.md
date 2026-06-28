@@ -13,3 +13,11 @@ Future work should revisit these pages with a better crawler-layer strategy, suc
 Some URLs return authentication protocol handoff pages instead of content. For example, SAML endpoints may return an auto-submit HTML form containing a hidden `SAMLRequest` and a `RelayState` target URL. The current parser marks these documents as `noindex,nofollow` so they should not become searchable content.
 
 Future crawler work should revisit whether these pages should be rejected earlier in the crawl pipeline instead of being parsed and then marked non-indexable. Ideally, SAML/auth handoffs should be tracked only as blocked or rejected crawl attempts, not as content candidates that need later cleanup.
+
+## Recrawl cleanup
+
+When a recrawl gets a definitive bad HTTP response (`4xx` or `5xx`), YaCy now removes any previously indexed fulltext/webgraph document for that URL before writing the failure marker. Redirects and network-level failures without an HTTP status do not trigger removal.
+
+When a recrawl successfully fetches a page but the parsed document declares `noindex`, the old indexed document is also removed before the failure is recorded. This covers parser-detected authentication handoff pages such as SAML request forms.
+
+Crawl-profile scope filters are intentionally not treated as proof that an existing document is bad. For example, a media-excluding crawl or a temporary URL/content regex should not delete a valid record that was accepted by an earlier crawl.
