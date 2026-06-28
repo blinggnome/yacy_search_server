@@ -1,0 +1,9 @@
+# Parser Metadata Notes
+
+## Empty JavaScript application shells
+
+Some single-page applications return an initial HTML shell with empty metadata and no body content, then fetch the actual page title and content from JavaScript-managed APIs. For example, `https://documents.bethesda.net/en/privacy-policy` initially returns an empty title, empty social metadata, and an empty content section; the actual privacy policy is loaded later from Contentful.
+
+The current HTML parser falls back to a readable title derived from the URL slug when no title, social metadata, or heading is available. This prevents completely empty titles, but it is not a complete solution: if the rendered application would show a 404, redirect, gated state, or different canonical content, the parser cannot know that from the initial shell alone.
+
+Future work should revisit these pages with a better crawler-layer strategy, such as controlled JavaScript rendering, site-declared API discovery, or a generic way to detect empty app shells and mark them for richer follow-up fetches. Parser-level slug titles should be treated as a low-confidence fallback, not proof that the rendered page exists or contains useful content.
