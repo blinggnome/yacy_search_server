@@ -117,6 +117,7 @@ import net.yacy.cora.document.id.DigestURL;
 import net.yacy.cora.document.id.MultiProtocolURL;
 import net.yacy.cora.federate.solr.FailCategory;
 import net.yacy.cora.federate.solr.Ranking;
+import net.yacy.cora.federate.solr.connector.AbstractSolrConnector;
 import net.yacy.cora.federate.solr.connector.ShardSelection;
 import net.yacy.cora.federate.solr.instance.EmbeddedInstance;
 import net.yacy.cora.federate.solr.instance.RemoteInstance;
@@ -180,6 +181,7 @@ import net.yacy.document.importer.OAIListFriendsLoader;
 import net.yacy.document.importer.WarcImporter;
 import net.yacy.document.importer.ZimImporter;
 import net.yacy.document.parser.audioTagParser;
+import net.yacy.document.parser.htmlParser;
 import net.yacy.document.parser.pdfParser;
 import net.yacy.document.parser.html.Evaluation;
 import net.yacy.gui.Audio;
@@ -3513,6 +3515,8 @@ public final class Switchboard extends serverSwitch {
             return;
         }
 
+        removeNonCanonicalYouTubeIndexDocuments(url);
+
         // STORE WORD INDEX
         final SolrInputDocument newEntry =
                 this.index.storeDocument(
@@ -3616,6 +3620,84 @@ public final class Switchboard extends serverSwitch {
         } catch (final IOException e) {
             this.log.warn("Failed to check existing indexed resource '" + url.toNormalform(true) + "' before removal: " + e.getMessage());
         }
+    }
+
+    private void removeNonCanonicalYouTubeIndexDocuments(final DigestURL url) {
+        if (url == null || this.index == null || this.index.fulltext().getDefaultConnector() == null) {
+            return;
+        }
+        final String canonicalUrl = htmlParser.canonicalYouTubeVideoUrl(url);
+        if (canonicalUrl == null) {
+            return;
+        }
+        final String videoId = youtubeVideoIdFromCanonicalUrl(canonicalUrl);
+        if (videoId.length() == 0) {
+            return;
+        }
+
+        final Collection<String> deleteIds = new ArrayList<>();
+        final String idField = CollectionSchema.id.getSolrFieldName();
+        final String skuField = CollectionSchema.sku.getSolrFieldName();
+        final BlockingQueue<SolrDocument> docs = this.index.fulltext().getDefaultConnector().concurrentDocumentsByQuery(
+                skuField + ":*" + solrEscapeTerm(videoId) + "*",
+                null,
+                0,
+                1000,
+                60000,
+                1000,
+                1,
+                false,
+                idField,
+                skuField);
+        try {
+            SolrDocument doc;
+            while ((doc = docs.take()) != AbstractSolrConnector.POISON_DOCUMENT) {
+                final Object idObject = doc.getFieldValue(idField);
+                final Object skuObject = doc.getFieldValue(skuField);
+                if (!(idObject instanceof String) || !(skuObject instanceof String)) {
+                    continue;
+                }
+                final String indexedUrl = (String) skuObject;
+                if (canonicalUrl.equals(indexedUrl)) {
+                    continue;
+                }
+                try {
+                    final String indexedCanonicalUrl = htmlParser.canonicalYouTubeVideoUrl(new DigestURL(indexedUrl));
+                    if (canonicalUrl.equals(indexedCanonicalUrl)) {
+                        deleteIds.add((String) idObject);
+                    }
+                } catch (final MalformedURLException e) {
+                    // Ignore malformed historic URLs; they cannot be safely tied to this video.
+                }
+            }
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        if (!deleteIds.isEmpty()) {
+            this.index.fulltext().remove(deleteIds);
+            this.log.info("Removed " + deleteIds.size() + " non-canonical YouTube index record(s) for " + canonicalUrl);
+        }
+    }
+
+    private static String youtubeVideoIdFromCanonicalUrl(final String canonicalUrl) {
+        final String marker = "https://www.youtube.com/watch?v=";
+        if (canonicalUrl == null || !canonicalUrl.startsWith(marker)) return "";
+        final String value = canonicalUrl.substring(marker.length());
+        final int amp = value.indexOf('&');
+        return amp < 0 ? value : value.substring(0, amp);
+    }
+
+    private static String solrEscapeTerm(final String value) {
+        final StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            final char c = value.charAt(i);
+            if ("+-!():^[]\"{}~?|&\\/".indexOf(c) >= 0) {
+                escaped.append('\\');
+            }
+            escaped.append(c);
+        }
+        return escaped.toString();
     }
 
     /**

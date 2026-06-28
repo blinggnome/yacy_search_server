@@ -104,6 +104,10 @@ public class htmlParser extends AbstractParser implements Parser {
         this.SUPPORTED_MIME_TYPES.add("text/csv");
     }
 
+    public static String canonicalYouTubeVideoUrl(final DigestURL location) {
+        return YouTubeOEmbedMetadata.canonicalVideoUrl(location);
+    }
+
     @Override
     public Document[] parse(
             final DigestURL location,
