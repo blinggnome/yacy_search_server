@@ -40,12 +40,12 @@
             <td></td>
             <td><strong>Text Rule</strong></td>
           </tr>
-          #{rules}#
+          #{ruleList}#
           <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
             <td><input type="checkbox" name="selectedRule.#[count]#" id="selectedRule.#[count]#" value="#[rule]#" /></td>
             <td><label for="selectedRule.#[count]#">#[rule]#</label></td>
           </tr>
-          #{/rules}#
+          #{/ruleList}#
         </table>
         <br />
         <input type="submit" name="deleteRules" class="btn btn-danger" value="Delete selected rules" />
