@@ -3264,6 +3264,14 @@ public final class Switchboard extends serverSwitch {
                 continue docloop;
             }
 
+            if (MetadataQuality.isZeroContentStub(document)) {
+                final String info = "Not Condensed Resource '" + urls + "': rejected zero-content document";
+                if (this.log.isInfo()) this.log.info(info);
+                removeExistingIndexDocument(in.queueEntry.url(), "zero-content document");
+                this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
+                continue docloop;
+            }
+
             // check content pattern must-match
             final Pattern mustmatchcontent = profile.indexContentMustMatchPattern();
             if (mustmatchcontent != CrawlProfile.MATCH_ALL_PATTERN && !mustmatchcontent.matcher(document.getTextString()).matches()) {
@@ -3410,6 +3418,13 @@ public final class Switchboard extends serverSwitch {
             removeExistingIndexDocument(url, "document rule denied indexing, process case=" + processCase);
             // create a new errorURL DB entry
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, "denied by rule in document, process case=" + processCase, -1);
+            return;
+        }
+
+        if (MetadataQuality.isZeroContentStub(document)) {
+            removeExistingIndexDocument(url, "zero-content document, process case=" + processCase);
+            this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
+                    "rejected zero-content document, process case=" + processCase, -1);
             return;
         }
 

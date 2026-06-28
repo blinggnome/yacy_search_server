@@ -54,6 +54,18 @@ public final class MetadataQuality {
         return score(existingDocument) > score(newDocument);
     }
 
+    public static boolean isZeroContentStub(final Document document) {
+        if (document == null) return false;
+
+        final String url = document.dc_source() == null ? "" : document.dc_source().toNormalform(true);
+        final String title = document.dc_title();
+        final boolean hasUsableTitle = titleScore(title, url) > 0 && !titleMatchesUrlSlug(title, document);
+        final boolean hasUsableDescription = descriptionScore(first(document.dc_description())) > 0;
+        final boolean hasBodyText = clean(document.getTextString()).length() > 0;
+
+        return !hasUsableTitle && !hasUsableDescription && !hasBodyText;
+    }
+
     private static int titleScore(final String title, final String url) {
         final String cleanTitle = clean(title);
         if (cleanTitle.length() == 0 || GENERIC_YOUTUBE_TITLE.equals(cleanTitle)) return 0;
@@ -90,5 +102,33 @@ public final class MetadataQuality {
 
     private static String clean(final String value) {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
+    }
+
+    private static boolean titleMatchesUrlSlug(final String title, final Document document) {
+        final String cleanTitle = clean(title);
+        if (cleanTitle.length() == 0 || document == null || document.dc_source() == null) return false;
+        return cleanTitle.equalsIgnoreCase(titleFromUrlSlug(document));
+    }
+
+    private static String titleFromUrlSlug(final Document document) {
+        String filename = document.dc_source().getFileName();
+        if (filename.length() == 0) {
+            final String path = document.dc_source().getPath();
+            if (path.length() <= 1) return "";
+            final String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+            final int slash = normalizedPath.lastIndexOf('/');
+            filename = slash >= 0 ? normalizedPath.substring(slash + 1) : normalizedPath;
+        }
+        if (filename.length() == 0 || filename.indexOf('.') >= 0) return "";
+
+        final String[] parts = filename.split("[-_]+");
+        final StringBuilder title = new StringBuilder(filename.length());
+        for (final String part : parts) {
+            if (part.length() == 0) continue;
+            if (title.length() > 0) title.append(' ');
+            title.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) title.append(part.substring(1));
+        }
+        return clean(title.toString());
     }
 }

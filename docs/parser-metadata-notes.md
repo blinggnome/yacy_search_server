@@ -8,6 +8,8 @@ The current HTML parser falls back to a readable title derived from the URL slug
 
 Future work should revisit these pages with a better crawler-layer strategy, such as controlled JavaScript rendering, site-declared API discovery, or a generic way to detect empty app shells and mark them for richer follow-up fetches. Parser-level slug titles should be treated as a low-confidence fallback, not proof that the rendered page exists or contains useful content.
 
+Zero-content documents are now rejected before indexing when the fetched page has no usable body text, no usable description, and no title beyond a URL-derived slug. This prevents empty JavaScript shells and soft-404 stubs from becoming searchable records. Pages that provide useful metadata, such as a real title plus description, remain indexable even when the visible body depends on JavaScript.
+
 ## Authentication handoff pages
 
 Some URLs return authentication protocol handoff pages instead of content. For example, SAML endpoints may return an auto-submit HTML form containing a hidden `SAMLRequest` and a `RelayState` target URL. The current parser marks these documents as `noindex,nofollow` so they should not become searchable content.
