@@ -330,6 +330,38 @@ public class htmlParserTest {
         assertEquals("Privacy Policy", scraper.getTitles().get(0));
         assertTrue(scraper.getDescriptions().isEmpty());
     }
+
+    /**
+     * SAML auto-submit handoff pages are authentication protocol messages, not
+     * human-readable destination content. They should be marked non-indexable.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testSamlRequestFormIsMarkedNoindex() throws Exception {
+        final AnchorURL url = new AnchorURL("https://example.com/sso/saml2/requestAssertion.ashx");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String testhtml = "<html><body onload=\"document.getElementById('samlForm').submit();\">"
+                + "<form id=\"samlForm\" action=\"https://idp.example.com/idp/SSO.saml2\" method=\"post\">"
+                + "<input type=\"hidden\" id=\"SAMLRequest\" name=\"SAMLRequest\" value=\"encoded-request\" />"
+                + "<input type=\"hidden\" id=\"RelayState\" name=\"RelayState\" value=\"https://example.com/target\" />"
+                + "</form></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertTrue(scraper.indexingDenied());
+        assertTrue(scraper.followDenied());
+        assertEquals("noindex,nofollow", scraper.getMetas().get("robots"));
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.

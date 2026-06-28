@@ -107,6 +107,7 @@ public class ContentScraper extends AbstractScraper implements Scraper {
         meta(TagOp.singleton, "", ""),
         area(TagOp.singleton, "", ""),
         link(TagOp.singleton, "", ""),
+        input(TagOp.singleton, "", ""),
         embed(TagOp.singleton, "", ""), //added by [MN]
         param(TagOp.singleton, "", ""), //added by [MN]
         iframe(TagOp.singleton, "", ""), // scraped as singleton to get such iframes that have no closing tag
@@ -819,6 +820,10 @@ public class ContentScraper extends AbstractScraper implements Scraper {
             if (name.length() > 0) {
                 this.metas.put(name.toLowerCase(), content);
             }
+        } else if (tag.tagType == TagType.input) {
+            if (isSamlRequestInput(tag)) {
+                this.metas.put("robots", "noindex,nofollow");
+            }
         } else if (tag.tagType == TagType.area) {
             final String areatitle = cleanLine(tag.opts.getProperty("title", EMPTY_STRING));
             //String alt   = tag.opts.getProperty("alt",EMPTY_STRING);
@@ -926,6 +931,12 @@ public class ContentScraper extends AbstractScraper implements Scraper {
 
         // fire event
         this.fireScrapeTag0(tag.tagName, tag.opts);
+    }
+
+    private static boolean isSamlRequestInput(final Tag tag) {
+        final String name = tag.opts.getProperty("name", EMPTY_STRING);
+        final String id = tag.opts.getProperty("id", EMPTY_STRING);
+        return "SAMLRequest".equalsIgnoreCase(name) || "SAMLRequest".equalsIgnoreCase(id);
     }
 
     /**
