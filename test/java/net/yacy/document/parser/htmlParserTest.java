@@ -168,6 +168,35 @@ public class htmlParserTest {
 
         assertEquals("Useful Page Heading", scraper.getTitles().get(0));
     }
+
+    /**
+     * Pages without meta descriptions should expose the first substantial body text
+     * as their description.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testMissingMetaDescriptionFallsBackToBodyText() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String description = "This paragraph contains a useful summary of the page content for search results and previews.";
+        final String testhtml = "<html><head><title>Page Title</title></head><body>"
+                + "<h1>This heading is intentionally long enough that it must not be used as the fallback page description</h1><p>"
+                + description + "</p></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals(description, scraper.getDescriptions().get(0));
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.

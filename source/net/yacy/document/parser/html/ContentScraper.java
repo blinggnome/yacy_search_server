@@ -1355,10 +1355,31 @@ public class ContentScraper extends AbstractScraper implements Scraper {
     public List<String> getDescriptions() {
         String s = this.metas.get("description");
         if (s == null) s = this.metas.get("dc.description");
+        if (s == null) s = firstUsefulContentDescription();
         final List<String> descriptions = new ArrayList<>();
         if (s == null) return descriptions;
         descriptions.add(s);
         return descriptions;
+    }
+
+    private String firstUsefulContentDescription() {
+        final String text = getText();
+        if (text.length() == 0) return null;
+
+        final String[] lines = text.split("\\r?\\n");
+        for (final String line : lines) {
+            final String candidate = cleanDescriptionCandidate(line);
+            if (candidate.length() >= 80) return candidate;
+        }
+
+        return null;
+    }
+
+    private String cleanDescriptionCandidate(final String line) {
+        String candidate = cleanLine(line);
+        if (candidate.startsWith("#") || candidate.startsWith("- ")) return EMPTY_STRING;
+        candidate = candidate.replace("**", EMPTY_STRING);
+        return cleanLine(candidate);
     }
 
     public String getContentType() {
