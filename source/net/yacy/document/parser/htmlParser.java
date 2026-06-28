@@ -40,6 +40,8 @@ import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.io.IOUtils;
 import org.json.JSONException;
@@ -202,9 +204,13 @@ public class htmlParser extends AbstractParser implements Parser {
         try {
             // first get a document from the parsed html
             Charset[] detectedcharsetcontainer = new Charset[]{null};
-            ContentScraper scraper = parseToScraper(location, documentCharset, defaultValency, valencySwitchTagNames, vocscraper, detectedcharsetcontainer, timezoneOffset, sourceStream, maxAnchors, maxLinks, maxBytes);
+            final boolean keepRawSource = YouTubeOEmbedMetadata.canEnrich(location);
+            final byte[] rawSource = keepRawSource ? IOUtils.toByteArray(sourceStream) : null;
+            final InputStream parserSourceStream = keepRawSource ? new ByteArrayInputStream(rawSource) : sourceStream;
+            ContentScraper scraper = parseToScraper(location, documentCharset, defaultValency, valencySwitchTagNames, vocscraper, detectedcharsetcontainer, timezoneOffset, parserSourceStream, maxAnchors, maxLinks, maxBytes);
+            final String rawSourceText = rawSource == null ? null : new String(rawSource, detectedcharsetcontainer[0] == null ? StandardCharsets.UTF_8 : detectedcharsetcontainer[0]);
             // parseToScraper also detects/corrects/sets charset from html content tag
-            final Document document = this.transformScraper(location, mimeType, detectedcharsetcontainer[0].name(), scraper, lastModified);
+            final Document document = this.transformScraper(location, mimeType, detectedcharsetcontainer[0].name(), scraper, rawSourceText, lastModified);
             Document documentSnapshot = null;
             try {
                 // check for ajax crawling scheme (https://developers.google.com/webmasters/ajax-crawling/docs/specification)
@@ -239,7 +245,7 @@ public class htmlParser extends AbstractParser implements Parser {
      * @return a Document instance
      */
     private Document transformScraper(final DigestURL location, final String mimeType, final String charSet,
-                                      final ContentScraper scraper, final Date lastModified) throws IOException {
+                                      final ContentScraper scraper, final String rawSource, final Date lastModified) throws IOException {
         final String[] sections = new String[
                  scraper.getHeadlines(1).length +
                  scraper.getHeadlines(2).length +
@@ -259,7 +265,7 @@ public class htmlParser extends AbstractParser implements Parser {
         List<String> descriptions = scraper.getDescriptions();
         String author = scraper.getAuthor();
 
-        final YouTubeOEmbedMetadata youtubeMetadata = YouTubeOEmbedMetadata.loadIfNeeded(location, titles, descriptions);
+        final YouTubeOEmbedMetadata youtubeMetadata = YouTubeOEmbedMetadata.loadIfNeeded(location, titles, descriptions, rawSource);
         if (youtubeMetadata != null) {
             titles = new ArrayList<>();
             titles.add(youtubeMetadata.title);
@@ -300,22 +306,27 @@ public class htmlParser extends AbstractParser implements Parser {
         private static final int TIMEOUT = 5000;
         private static final String GENERIC_YOUTUBE_TITLE = "- YouTube";
         private static final String GENERIC_YOUTUBE_DESCRIPTION = "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.";
+        private static final Pattern ATTRIBUTED_DESCRIPTION = Pattern.compile("\"attributedDescription\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
         private final String title;
         private final String authorName;
+        private final String sourceDescription;
 
-        private YouTubeOEmbedMetadata(final String title, final String authorName) {
+        private YouTubeOEmbedMetadata(final String title, final String authorName, final String sourceDescription) {
             this.title = title;
             this.authorName = authorName;
+            this.sourceDescription = sourceDescription;
         }
 
         private String description() {
+            if (this.sourceDescription.length() > 0) return this.sourceDescription;
             return "YouTube video by " + this.authorName + ": " + this.title;
         }
 
-        private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions) {
+        private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions, final String rawSource) {
             final String oembedTargetUrl = oembedTargetUrl(location);
             if (oembedTargetUrl == null || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
+            final String sourceDescription = attributedDescription(rawSource);
 
             try {
                 final String encodedUrl = URLEncoder.encode(oembedTargetUrl, StandardCharsets.UTF_8);
@@ -331,10 +342,25 @@ public class htmlParser extends AbstractParser implements Parser {
                     final String title = metadata.optString("title", "").trim();
                     final String authorName = metadata.optString("author_name", "").trim();
                     if (title.length() == 0 || authorName.length() == 0) return null;
-                    return new YouTubeOEmbedMetadata(title, authorName);
+                    return new YouTubeOEmbedMetadata(title, authorName, sourceDescription);
                 }
             } catch (final IOException | JSONException e) {
                 return null;
+            }
+        }
+
+        private static boolean canEnrich(final DigestURL location) {
+            return oembedTargetUrl(location) != null;
+        }
+
+        static String attributedDescription(final String rawSource) {
+            if (rawSource == null || rawSource.length() == 0) return "";
+            final Matcher matcher = ATTRIBUTED_DESCRIPTION.matcher(rawSource);
+            if (!matcher.find()) return "";
+            try {
+                return new JSONObject("{\"value\":\"" + matcher.group(1) + "\"}").optString("value", "").trim();
+            } catch (final JSONException e) {
+                return "";
             }
         }
 
@@ -648,7 +674,7 @@ public class htmlParser extends AbstractParser implements Parser {
             try {
                 snapshotStream = locationSnapshot.getInputStream(ClientIdentification.yacyInternetCrawlerAgent);
                 ContentScraper scraperSnapshot = parseToScraper(location, documentCharset, defaultValency, valencySwitchTagNames, vocscraper, detectedcharsetcontainer, timezoneOffset, snapshotStream, maxAnchors, maxLinks, maxBytes);
-                documentSnapshot = this.transformScraper(location, mimeType, detectedcharsetcontainer[0].name(), scraperSnapshot, null);
+                documentSnapshot = this.transformScraper(location, mimeType, detectedcharsetcontainer[0].name(), scraperSnapshot, null, null);
             } finally {
                 if(snapshotStream != null) {
                     try {
