@@ -285,7 +285,7 @@ public class htmlParser extends AbstractParser implements Parser {
                 charSet,
                 this,
                 scraper.getContentLanguages(),
-                scraper.getKeywords(),
+                YouTubeOEmbedMetadata.cleanKeywords(location, scraper.getKeywords()),
                 titles,
                 author,
                 scraper.getPublisher(),
@@ -312,6 +312,7 @@ public class htmlParser extends AbstractParser implements Parser {
         private static final String GENERIC_YOUTUBE_TITLE = "- YouTube";
         private static final String EMBED_YOUTUBE_TITLE = "YouTube";
         private static final String GENERIC_YOUTUBE_DESCRIPTION = "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.";
+        private static final String[] GENERIC_YOUTUBE_KEYWORDS = {"video", "sharing", "camera", "phone", "video", "phone", "free", "upload"};
         private static final Pattern ATTRIBUTED_DESCRIPTION = Pattern.compile("\"attributedDescription\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
         private final String title;
@@ -357,6 +358,17 @@ public class htmlParser extends AbstractParser implements Parser {
 
         private static boolean canEnrich(final DigestURL location) {
             return canonicalVideoUrl(location) != null;
+        }
+
+        private static String[] cleanKeywords(final DigestURL location, final String[] keywords) {
+            if (canonicalVideoUrl(location) == null || keywords == null) return keywords;
+            if (keywords.length != GENERIC_YOUTUBE_KEYWORDS.length) return keywords;
+            for (int i = 0; i < keywords.length; i++) {
+                if (!GENERIC_YOUTUBE_KEYWORDS[i].equalsIgnoreCase(keywords[i].trim())) {
+                    return keywords;
+                }
+            }
+            return new String[0];
         }
 
         private static DigestURL canonicalLocation(final DigestURL location) throws MalformedURLException {
