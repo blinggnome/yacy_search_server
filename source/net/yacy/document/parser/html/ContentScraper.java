@@ -1090,7 +1090,9 @@ public class ContentScraper extends AbstractScraper implements Scraper {
     public List<String> getTitles() {
 
         // some documents have a title tag as meta tag
-        final String s = this.metas.get("title");
+        String s = this.metas.get("title");
+        if (s == null) s = this.metas.get("og:title");
+        if (s == null) s = this.metas.get("twitter:title");
         if (s != null && s.length() > 0) {
             this.titles.add(s);
         }
@@ -1355,6 +1357,8 @@ public class ContentScraper extends AbstractScraper implements Scraper {
     public List<String> getDescriptions() {
         String s = this.metas.get("description");
         if (s == null) s = this.metas.get("dc.description");
+        if (s == null) s = this.metas.get("og:description");
+        if (s == null) s = this.metas.get("twitter:description");
         if (s == null) s = firstUsefulContentDescription();
         final List<String> descriptions = new ArrayList<>();
         if (s == null) return descriptions;

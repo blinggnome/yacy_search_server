@@ -374,6 +374,35 @@ public final class TransformerWriter extends Writer {
         return tag.length - 1;
     }
 
+    private boolean shouldCloseMalformedSingletonTagInQuote(final int c) {
+        if (c != rb || this.scraper == null || this.buffer == null || this.buffer.length() < 4) return false;
+        if (this.buffer.charAt(0) != lb) return false;
+
+        int previous = this.buffer.length() - 2;
+        while (previous > 0 && Character.isWhitespace(this.buffer.charAt(previous))) previous--;
+        if (previous <= 0 || this.buffer.charAt(previous) != '/') return false;
+
+        int tagend = 1;
+        while (tagend < this.buffer.length()) {
+            final char tc = this.buffer.charAt(tagend);
+            if (tc == '!' || tc == '-' || (tc >= '0' && tc <= '9') || (tc >= 'a' && tc <= 'z') || (tc >= 'A' && tc <= 'Z')) {
+                tagend++;
+                continue;
+            }
+            break;
+        }
+        if (tagend <= 1) return false;
+
+        final String tagname = this.buffer.toString().substring(1, tagend).toLowerCase(Locale.ROOT);
+        return this.scraper.isSingetonTag(tagname);
+    }
+
+    private void processBufferedToken(final char quotechar) throws IOException {
+        final char[] filtered = this.tokenProcessor(this.buffer.getChars(), quotechar);
+        if (this.out != null) this.out.write(filtered);
+        this.buffer.reset();
+    }
+
     /**
      * this is the tokenizer of the parser: it splits the input into pieces which are
      * - quoted text parts
@@ -394,10 +423,20 @@ public final class TransformerWriter extends Writer {
             char[] filtered;
             if (this.inSingleQuote) {
                 this.buffer.append(c);
-                if (c == singlequote) this.inSingleQuote = false;
+                if (c == singlequote) {
+                    this.inSingleQuote = false;
+                } else if (this.shouldCloseMalformedSingletonTagInQuote(c)) {
+                    this.inSingleQuote = false;
+                    this.processBufferedToken(singlequote);
+                }
             } else if (this.inDoubleQuote) {
                 this.buffer.append(c);
-                if (c == doublequote) this.inDoubleQuote = false;
+                if (c == doublequote) {
+                    this.inDoubleQuote = false;
+                } else if (this.shouldCloseMalformedSingletonTagInQuote(c)) {
+                    this.inDoubleQuote = false;
+                    this.processBufferedToken(doublequote);
+                }
             } else if (this.inComment) {
                 this.buffer.append(c);
                 if (c == rb &&
@@ -431,10 +470,7 @@ public final class TransformerWriter extends Writer {
                     } else if (c == rb) {
                         this.buffer.append(c);
                         // the tag ends here. after filtering: pass on
-                        filtered = this.tokenProcessor(this.buffer.getChars(), doublequote);
-                        if (this.out != null) this.out.write(filtered);
-                        // this.buffer = new serverByteBuffer();
-                        this.buffer.reset();
+                        this.processBufferedToken(doublequote);
                     } else if (c == lb) {
                         // this is an error case
                         // we consider that there is one rb missing

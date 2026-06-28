@@ -197,6 +197,71 @@ public class htmlParserTest {
 
         assertEquals(description, scraper.getDescriptions().get(0));
     }
+
+    /**
+     * OpenGraph/Twitter metadata should be used when ordinary HTML title or
+     * description metadata is not available.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testSocialMetadataTitleAndDescriptionFallback() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String title = "Specific social metadata title";
+        final String description = "Specific social metadata description with enough detail for search previews.";
+        final String testhtml = "<html><head>"
+                + "<meta property=\"og:title\" content=\"" + title + "\">"
+                + "<meta property=\"og:description\" content=\"" + description + "\">"
+                + "</head><body><p>This body text should not be used as metadata.</p></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals(title, scraper.getTitles().get(0));
+        assertEquals(description, scraper.getDescriptions().get(0));
+    }
+
+    /**
+     * A malformed singleton meta tag must not hide later title and description
+     * tags in the document head.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testMalformedSingletonMetaDoesNotHideLaterHeadMetadata() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String title = "Useful Article Title";
+        final String description = "This article description appears after a malformed charset meta tag and should still be parsed.";
+        final String testhtml = "<html><head>"
+                + "<meta http-equiv='Content-Type' content='text/html; charset='iso-8859-1' />"
+                + "<title>" + title + "</title>"
+                + "<meta name=\"description\" content=\"" + description + "\" />"
+                + "</head><body>Visible article text for this parser regression.</body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals(title, scraper.getTitles().get(0));
+        assertEquals(description, scraper.getDescriptions().get(0));
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.
