@@ -8,7 +8,18 @@
     #%env/templates/header.template%#
     #%env/templates/submenuCrawlMonitor.template%#
     <h2>Rejected URLs</h2>
-    
+
+    #(status)#
+    ::
+    <div class="alert #(success)#alert-danger::alert-success#(/success)#" role="alert">#[message]#</div>
+    #(/status)#
+
+    <form action="IndexCreateParserErrors_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+      <fieldset>
+        <input type="submit" name="purgeFailureDocuments" class="btn btn-danger" value="purge stored failure markers" />
+      </fieldset>
+    </form>
+
     #(rejected)#
     ::
     <form action="IndexCreateParserErrors_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">

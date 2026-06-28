@@ -25,6 +25,7 @@
 
 package net.yacy.htroot;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 import net.yacy.cora.date.GenericFormatter;
@@ -43,12 +44,25 @@ public class IndexCreateParserErrors_p {
         final Switchboard sb = (Switchboard) env;
         final serverObjects prop = new serverObjects();
         prop.put("rejected", "0");
+        prop.put("status", "0");
         int showRejectedCount = 100;
 
         if (post != null) {
 
             if (post.containsKey("clearRejected")) {
                 sb.crawlQueues.errorURL.clearStack();
+            }
+            if (post.containsKey("purgeFailureDocuments")) {
+                try {
+                    sb.crawlQueues.errorURL.clear();
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Stored failure markers were purged from the index.");
+                } catch (final IOException e) {
+                    prop.put("status", "1");
+                    prop.put("status_success", "0");
+                    prop.putHTML("status_message", "Stored failure markers could not be purged: " + e.getMessage());
+                }
             }
             if (post.containsKey("moreRejected")) {
                 showRejectedCount = post.getInt("showRejected", 10);
