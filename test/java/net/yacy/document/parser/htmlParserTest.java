@@ -143,6 +143,31 @@ public class htmlParserTest {
 			}
 		}
 	}
+
+    /**
+     * Empty title tags should not prevent fallback to the first meaningful headline.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testEmptyTitleFallsBackToHeadline() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String testhtml = "<html><head><title></title></head><body><h1>Useful Page Heading</h1></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals("Useful Page Heading", scraper.getTitles().get(0));
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.

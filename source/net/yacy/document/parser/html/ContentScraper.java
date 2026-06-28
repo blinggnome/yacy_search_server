@@ -982,8 +982,10 @@ public class ContentScraper extends AbstractScraper implements Scraper {
             if (h.length() > 0) this.headlines[5].add(h);
         } else if ((tag.tagType == TagType.title) && (tag.content.length() < 1024)) {
             h = cleanLine(CharacterCoding.html2unicode(stripAllTags(tag.content.getChars())));
-            this.titles.add(h);
-            this.evaluationScores.match(Element.title, h);
+            if (h.length() > 0) {
+                this.titles.add(h);
+                this.evaluationScores.match(Element.title, h);
+            }
         } else if ((tag.tagType == TagType.b) && (tag.content.length() < 1024)) {
             h = cleanLine(CharacterCoding.html2unicode(stripAllTags(tag.content.getChars())));
             if (h.length() > 0) this.bold.inc(h);
