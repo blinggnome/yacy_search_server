@@ -314,10 +314,11 @@ public class htmlParser extends AbstractParser implements Parser {
         }
 
         private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions) {
-            if (!isYouTubeWatchUrl(location) || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
+            final String oembedTargetUrl = oembedTargetUrl(location);
+            if (oembedTargetUrl == null || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
 
             try {
-                final String encodedUrl = URLEncoder.encode(location.toNormalform(true), StandardCharsets.UTF_8);
+                final String encodedUrl = URLEncoder.encode(oembedTargetUrl, StandardCharsets.UTF_8);
                 final URL oembedUrl = new URL("https://www.youtube.com/oembed?format=json&url=" + encodedUrl);
                 final URLConnection connection = oembedUrl.openConnection();
                 connection.setConnectTimeout(TIMEOUT);
@@ -337,12 +338,39 @@ public class htmlParser extends AbstractParser implements Parser {
             }
         }
 
-        private static boolean isYouTubeWatchUrl(final DigestURL location) {
+        private static String oembedTargetUrl(final DigestURL location) {
             final String host = location.getHost();
-            if (host == null) return false;
+            if (host == null) return null;
             final String lowerHost = host.toLowerCase(Locale.ROOT);
-            if (!("www.youtube.com".equals(lowerHost) || "youtube.com".equals(lowerHost) || "m.youtube.com".equals(lowerHost))) return false;
-            return location.getFile().startsWith("/watch?") && location.getFile().contains("v=");
+            if (!("www.youtube.com".equals(lowerHost) || "youtube.com".equals(lowerHost) || "m.youtube.com".equals(lowerHost))) return null;
+
+            final String file = location.getFile();
+            if (file.startsWith("/watch?") && file.contains("v=")) return location.toNormalform(true);
+
+            if (file.startsWith("/v/")) {
+                final String videoId = youtubeVideoIdFromLegacyEmbedPath(file);
+                if (videoId.length() > 0) return "https://www.youtube.com/watch?v=" + videoId;
+            }
+            return null;
+        }
+
+        private static String youtubeVideoIdFromLegacyEmbedPath(final String file) {
+            if (file == null || !file.startsWith("/v/")) return "";
+            final String path = file.substring(3);
+            final int end = firstNonVideoIdCharacter(path);
+            return end <= 0 ? path : path.substring(0, end);
+        }
+
+        private static int firstNonVideoIdCharacter(final String value) {
+            for (int i = 0; i < value.length(); i++) {
+                final char c = value.charAt(i);
+                if (!(c >= 'A' && c <= 'Z')
+                        && !(c >= 'a' && c <= 'z')
+                        && !(c >= '0' && c <= '9')
+                        && c != '-'
+                        && c != '_') return i;
+            }
+            return value.length();
         }
 
         private static boolean hasGenericYouTubeMetadata(final List<String> titles, final List<String> descriptions) {
