@@ -12,6 +12,8 @@ Zero-content documents are now rejected before indexing when the fetched page ha
 
 Parsed soft-error pages are also rejected when their title indicates a 404/not-found page and the description or body confirms missing-page content. This catches sites that return `200 OK` while serving an error page, without rejecting ordinary articles that merely discuss HTTP 404 errors.
 
+Operators can also configure crawler content rejection rules from the Filter & Blacklists admin area. These rules are plain-text, case-insensitive substring matches against parsed title, description, and body text. A matching document is rejected before indexing and any existing indexed record for that URL is removed.
+
 ## Authentication handoff pages
 
 Some URLs return authentication protocol handoff pages instead of content. For example, SAML endpoints may return an auto-submit HTML form containing a hidden `SAMLRequest` and a `RelayState` target URL. The current parser marks these documents as `noindex,nofollow` so they should not become searchable content.

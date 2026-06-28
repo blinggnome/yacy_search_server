@@ -140,6 +140,7 @@ import net.yacy.crawler.CrawlStacker;
 import net.yacy.crawler.CrawlSwitchboard;
 import net.yacy.crawler.HarvestProcess;
 import net.yacy.crawler.data.Cache;
+import net.yacy.crawler.data.CrawlerContentRejection;
 import net.yacy.crawler.data.CrawlProfile;
 import net.yacy.crawler.data.CrawlProfile.CrawlAttribute;
 import net.yacy.crawler.data.CrawlQueues;
@@ -275,6 +276,7 @@ public final class Switchboard extends serverSwitch {
     public File packsHoldPath, packsLivePath, packsLoadPath, packsLoadedPath, packsUnloadPath;
     public Segment index;
     public LoaderDispatcher loader;
+    public CrawlerContentRejection crawlerContentRejection;
     public CrawlSwitchboard crawler;
     public CrawlQueues crawlQueues;
     public CrawlStacker crawlStacker;
@@ -727,6 +729,7 @@ public final class Switchboard extends serverSwitch {
         ListManager.switchboard = this;
         ListManager.listsPath = blacklistsPath;
         ListManager.reloadBlacklists();
+        this.crawlerContentRejection = new CrawlerContentRejection(blacklistsPath);
 
         // Set jvm default locale to match UI language (
         String lng = this.getConfig("locale.language", "en");
@@ -3264,6 +3267,15 @@ public final class Switchboard extends serverSwitch {
                 continue docloop;
             }
 
+            final String crawlerContentRejectionRule = this.crawlerContentRejection.firstMatchingRule(document);
+            if (crawlerContentRejectionRule != null) {
+                final String info = "Not Condensed Resource '" + urls + "': rejected by crawler content rule '" + crawlerContentRejectionRule + "'";
+                if (this.log.isInfo()) this.log.info(info);
+                removeExistingIndexDocument(in.queueEntry.url(), "crawler content rule '" + crawlerContentRejectionRule + "'");
+                this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
+                continue docloop;
+            }
+
             if (MetadataQuality.isErrorPage(document)) {
                 final String info = "Not Condensed Resource '" + urls + "': rejected parsed error page";
                 if (this.log.isInfo()) this.log.info(info);
@@ -3426,6 +3438,14 @@ public final class Switchboard extends serverSwitch {
             removeExistingIndexDocument(url, "document rule denied indexing, process case=" + processCase);
             // create a new errorURL DB entry
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, "denied by rule in document, process case=" + processCase, -1);
+            return;
+        }
+
+        final String crawlerContentRejectionRule = this.crawlerContentRejection.firstMatchingRule(document);
+        if (crawlerContentRejectionRule != null) {
+            removeExistingIndexDocument(url, "crawler content rule '" + crawlerContentRejectionRule + "', process case=" + processCase);
+            this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
+                    "rejected by crawler content rule '" + crawlerContentRejectionRule + "', process case=" + processCase, -1);
             return;
         }
 

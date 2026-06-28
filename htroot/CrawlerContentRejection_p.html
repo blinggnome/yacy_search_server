@@ -1,0 +1,68 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>YaCy '#[clientname]#': Crawler Content Rejection</title>
+    #%env/templates/metas.template%#
+  </head>
+  <body id="Blacklist">
+    #%env/templates/header.template%#
+    #%env/templates/submenuBlacklist.template%#
+
+    <h2>Crawler Content Rejection</h2>
+    <p>
+      Plain text rules entered here are matched case-insensitively against the parsed document title,
+      description and body text during crawling. Matching documents are rejected before indexing, and
+      any existing indexed record for the URL is removed.
+    </p>
+
+    #(status)#
+    ::
+    <div class="alert #(success)#alert-danger::alert-success#(/success)#" role="alert">#[message]#</div>
+    #(/status)#
+
+    <fieldset>
+      <legend>Add rule</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <input type="text" name="newRule" size="80" />
+        <input type="submit" name="addRule" class="btn btn-primary" value="Add text rule" />
+      </form>
+    </fieldset>
+
+    <fieldset>
+      <legend>Current rules</legend>
+      <p>There are #[count]# crawler content rejection rules.</p>
+      #(hasRules)#
+      <p>No crawler content rejection rules are currently configured.</p>
+      ::
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <table border="0">
+          <tr class="TableHeader">
+            <td></td>
+            <td><strong>Text Rule</strong></td>
+          </tr>
+          #{rules}#
+          <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
+            <td><input type="checkbox" name="selectedRule.#[count]#" id="selectedRule.#[count]#" value="#[rule]#" /></td>
+            <td><label for="selectedRule.#[count]#">#[rule]#</label></td>
+          </tr>
+          #{/rules}#
+        </table>
+        <br />
+        <input type="submit" name="deleteRules" class="btn btn-danger" value="Delete selected rules" />
+      </form>
+      #(/hasRules)#
+    </fieldset>
+
+    <fieldset>
+      <legend>Bulk edit</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <p>One plain text rule per line. Blank lines and lines beginning with <code>#</code> are ignored.</p>
+        <textarea name="rulesText" cols="100" rows="16">#[rulesText]#</textarea>
+        <br />
+        <input type="submit" name="saveRules" class="btn btn-primary" value="Save rules" />
+      </form>
+    </fieldset>
+
+    #%env/templates/footer.template%#
+  </body>
+</html>
