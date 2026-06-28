@@ -32,6 +32,9 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +42,9 @@ import java.nio.charset.UnsupportedCharsetException;
 import java.util.*;
 
 import org.apache.commons.io.IOUtils;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import com.ibm.icu.text.CharsetDetector;
 
@@ -249,6 +255,19 @@ public class htmlParser extends AbstractParser implements Parser {
         }
         LinkedHashMap<DigestURL, ImageEntry> noDoubleImages = new LinkedHashMap<>();
         for (ImageEntry ie: scraper.getImages()) noDoubleImages.put(ie.url(), ie);
+        List<String> titles = scraper.getTitles();
+        List<String> descriptions = scraper.getDescriptions();
+        String author = scraper.getAuthor();
+
+        final YouTubeOEmbedMetadata youtubeMetadata = YouTubeOEmbedMetadata.loadIfNeeded(location, titles, descriptions);
+        if (youtubeMetadata != null) {
+            titles = new ArrayList<>();
+            titles.add(youtubeMetadata.title);
+            descriptions = new ArrayList<>();
+            descriptions.add(youtubeMetadata.description());
+            if (author.length() == 0) author = youtubeMetadata.authorName;
+        }
+
         final Document ppd = new Document(
                 location,
                 mimeType,
@@ -256,11 +275,11 @@ public class htmlParser extends AbstractParser implements Parser {
                 this,
                 scraper.getContentLanguages(),
                 scraper.getKeywords(),
-                scraper.getTitles(),
-                scraper.getAuthor(),
+                titles,
+                author,
                 scraper.getPublisher(),
                 sections,
-                scraper.getDescriptions(),
+                descriptions,
                 scraper.getLon(), scraper.getLat(),
                 scraper.getText(),
                 scraper.getAnchors(),
@@ -274,6 +293,64 @@ public class htmlParser extends AbstractParser implements Parser {
         ppd.setPartiallyParsed(scraper.isLimitsExceeded());
 
         return ppd;
+    }
+
+    private static final class YouTubeOEmbedMetadata {
+
+        private static final int TIMEOUT = 5000;
+        private static final String GENERIC_YOUTUBE_TITLE = "- YouTube";
+        private static final String GENERIC_YOUTUBE_DESCRIPTION = "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.";
+
+        private final String title;
+        private final String authorName;
+
+        private YouTubeOEmbedMetadata(final String title, final String authorName) {
+            this.title = title;
+            this.authorName = authorName;
+        }
+
+        private String description() {
+            return "YouTube video by " + this.authorName + ": " + this.title;
+        }
+
+        private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions) {
+            if (!isYouTubeWatchUrl(location) || !hasGenericYouTubeMetadata(titles, descriptions)) return null;
+
+            try {
+                final String encodedUrl = URLEncoder.encode(location.toNormalform(true), StandardCharsets.UTF_8);
+                final URL oembedUrl = new URL("https://www.youtube.com/oembed?format=json&url=" + encodedUrl);
+                final URLConnection connection = oembedUrl.openConnection();
+                connection.setConnectTimeout(TIMEOUT);
+                connection.setReadTimeout(TIMEOUT);
+                connection.setRequestProperty("User-Agent", ClientIdentification.yacyInternetCrawlerAgent.userAgent());
+
+                try (InputStream stream = connection.getInputStream();
+                        Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                    final JSONObject metadata = new JSONObject(new JSONTokener(reader));
+                    final String title = metadata.optString("title", "").trim();
+                    final String authorName = metadata.optString("author_name", "").trim();
+                    if (title.length() == 0 || authorName.length() == 0) return null;
+                    return new YouTubeOEmbedMetadata(title, authorName);
+                }
+            } catch (final IOException | JSONException e) {
+                return null;
+            }
+        }
+
+        private static boolean isYouTubeWatchUrl(final DigestURL location) {
+            final String host = location.getHost();
+            if (host == null) return false;
+            final String lowerHost = host.toLowerCase(Locale.ROOT);
+            if (!("www.youtube.com".equals(lowerHost) || "youtube.com".equals(lowerHost) || "m.youtube.com".equals(lowerHost))) return false;
+            return location.getFile().startsWith("/watch?") && location.getFile().contains("v=");
+        }
+
+        private static boolean hasGenericYouTubeMetadata(final List<String> titles, final List<String> descriptions) {
+            if (titles == null || titles.isEmpty()) return false;
+            if (!GENERIC_YOUTUBE_TITLE.equals(titles.get(0))) return false;
+            if (descriptions == null || descriptions.isEmpty()) return true;
+            return GENERIC_YOUTUBE_DESCRIPTION.equals(descriptions.get(0));
+        }
     }
 
     public static ContentScraper parseToScraper(
