@@ -66,6 +66,17 @@ public final class MetadataQuality {
         return !hasUsableTitle && !hasUsableDescription && !hasBodyText;
     }
 
+    public static boolean isErrorPage(final Document document) {
+        if (document == null) return false;
+
+        final String title = clean(document.dc_title()).toLowerCase(Locale.ROOT);
+        final String description = clean(first(document.dc_description())).toLowerCase(Locale.ROOT);
+        final String body = clean(document.getTextString()).toLowerCase(Locale.ROOT);
+
+        if (!titleIndicatesErrorPage(title)) return false;
+        return textIndicatesMissingPage(description) || textIndicatesMissingPage(body);
+    }
+
     private static int titleScore(final String title, final String url) {
         final String cleanTitle = clean(title);
         if (cleanTitle.length() == 0 || GENERIC_YOUTUBE_TITLE.equals(cleanTitle)) return 0;
@@ -102,6 +113,29 @@ public final class MetadataQuality {
 
     private static String clean(final String value) {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
+    }
+
+    private static boolean titleIndicatesErrorPage(final String title) {
+        if (title.length() == 0) return false;
+        return "404".equals(title)
+                || title.startsWith("404 ")
+                || title.startsWith("404 -")
+                || title.startsWith("404 |")
+                || title.startsWith("error 404")
+                || title.contains("404 not found")
+                || title.contains("page not found");
+    }
+
+    private static boolean textIndicatesMissingPage(final String text) {
+        if (text.length() == 0) return false;
+        return text.contains("page not found")
+                || text.contains("404 not found")
+                || text.contains("content you're looking for")
+                || text.contains("content you’re looking for")
+                || text.contains("page you are looking for")
+                || text.contains("page has either been moved")
+                || text.contains("removed from our server")
+                || text.contains("go to homepage");
     }
 
     private static boolean titleMatchesUrlSlug(final String title, final Document document) {

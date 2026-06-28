@@ -72,6 +72,39 @@ public class MetadataQualityTest {
         assertFalse(MetadataQuality.isZeroContentStub(document));
     }
 
+    @Test
+    public void testParsed404PageIsRejected() throws MalformedURLException {
+        final Document document = document(
+                "https://www.ct-tc.gc.ca/CasesAffaires/findCase-eng.asp",
+                Collections.singletonList("Error 404 / Erreur 404"),
+                Collections.emptyList(),
+                "ERROR 404 Page not found! The page you are looking for has either been moved or maybe completely removed from our server.");
+
+        assertTrue(MetadataQuality.isErrorPage(document));
+    }
+
+    @Test
+    public void testGenericSiteDescriptionDoesNotSave404Page() throws MalformedURLException {
+        final Document document = document(
+                "https://www.zerohedge.com/users/nope-1004",
+                Collections.singletonList("404 | ZeroHedge"),
+                Collections.singletonList("ZeroHedge - On a long enough timeline, the survival rate for everyone drops to zero"),
+                "We couldn't find the content you're looking for.");
+
+        assertTrue(MetadataQuality.isErrorPage(document));
+    }
+
+    @Test
+    public void test404MentionInRealContentIsNotRejected() throws MalformedURLException {
+        final Document document = document(
+                "https://example.org/articles/http-errors",
+                Collections.singletonList("How to Fix 404 Errors"),
+                Collections.singletonList("A technical guide to diagnosing missing page responses."),
+                "This article explains why a website may return a 404 response and how to repair broken links.");
+
+        assertFalse(MetadataQuality.isErrorPage(document));
+    }
+
     private static Document document(
             final String url,
             final java.util.List<String> titles,

@@ -3264,6 +3264,14 @@ public final class Switchboard extends serverSwitch {
                 continue docloop;
             }
 
+            if (MetadataQuality.isErrorPage(document)) {
+                final String info = "Not Condensed Resource '" + urls + "': rejected parsed error page";
+                if (this.log.isInfo()) this.log.info(info);
+                removeExistingIndexDocument(in.queueEntry.url(), "parsed error page");
+                this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
+                continue docloop;
+            }
+
             if (MetadataQuality.isZeroContentStub(document)) {
                 final String info = "Not Condensed Resource '" + urls + "': rejected zero-content document";
                 if (this.log.isInfo()) this.log.info(info);
@@ -3425,6 +3433,13 @@ public final class Switchboard extends serverSwitch {
             removeExistingIndexDocument(url, "zero-content document, process case=" + processCase);
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected zero-content document, process case=" + processCase, -1);
+            return;
+        }
+
+        if (MetadataQuality.isErrorPage(document)) {
+            removeExistingIndexDocument(url, "parsed error page, process case=" + processCase);
+            this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
+                    "rejected parsed error page, process case=" + processCase, -1);
             return;
         }
 
