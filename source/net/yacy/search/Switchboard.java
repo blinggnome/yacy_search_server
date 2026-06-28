@@ -229,6 +229,7 @@ import net.yacy.search.query.SearchEventCache;
 import net.yacy.search.ranking.RankingProfile;
 import net.yacy.search.schema.CollectionConfiguration;
 import net.yacy.search.schema.CollectionSchema;
+import net.yacy.search.schema.MetadataQuality;
 import net.yacy.search.schema.WebgraphConfiguration;
 import net.yacy.search.snippet.TextSnippet;
 import net.yacy.server.serverCore;
@@ -3443,6 +3444,12 @@ public final class Switchboard extends serverSwitch {
             return;
         }
 
+        if (existingMetadataIsBetter(url, document)) {
+            this.log.info("Not Indexed Resource '" + queueEntry.url().toNormalform(false, true)
+                    + "': existing metadata is richer than newly parsed metadata.");
+            return;
+        }
+
         // STORE WORD INDEX
         final SolrInputDocument newEntry =
                 this.index.storeDocument(
@@ -3513,6 +3520,20 @@ public final class Switchboard extends serverSwitch {
                     this.log.info("malformed url: "+ex.getMessage());
                 }
             }
+        }
+    }
+
+    private boolean existingMetadataIsBetter(final DigestURL url, final Document document) {
+        try {
+            final SolrDocument existing = this.index.fulltext().getDefaultConnector().getDocumentById(
+                    ASCII.String(url.hash()),
+                    CollectionSchema.sku.getSolrFieldName(),
+                    CollectionSchema.title.getSolrFieldName(),
+                    CollectionSchema.description_txt.getSolrFieldName(),
+                    CollectionSchema.author.getSolrFieldName());
+            return MetadataQuality.existingIsBetter(existing, document);
+        } catch (final IOException e) {
+            return false;
         }
     }
 

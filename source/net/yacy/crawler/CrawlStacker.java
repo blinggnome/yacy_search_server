@@ -36,6 +36,8 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.solr.common.SolrDocument;
+
 import net.yacy.cora.date.ISO8601Formatter;
 import net.yacy.cora.document.encoding.ASCII;
 import net.yacy.cora.document.encoding.UTF8;
@@ -60,6 +62,8 @@ import net.yacy.repository.Blacklist.BlacklistType;
 import net.yacy.repository.FilterEngine;
 import net.yacy.search.Switchboard;
 import net.yacy.search.index.Segment;
+import net.yacy.search.schema.CollectionSchema;
+import net.yacy.search.schema.MetadataQuality;
 
 public final class CrawlStacker implements WorkflowTask<Request>{
 
@@ -460,6 +464,9 @@ public final class CrawlStacker implements WorkflowTask<Request>{
             if (CrawlStacker.log.isFine())
                 CrawlStacker.log.fine("RE-CRAWL of URL '" + urlstring + "': this url was crawled " +
                         ((System.currentTimeMillis() - oldDate) / 60000 / 60 / 24) + " days ago.");
+        } else if (storedMetadataIsPoor(url.hash())) {
+            if (CrawlStacker.log.isFine())
+                CrawlStacker.log.fine("RE-CRAWL of URL '" + urlstring + "': stored metadata is incomplete or generic.");
         } else {
             return CRAWL_REJECT_REASON_DOUBLE_IN_PREFIX + ": local index, recrawl rejected. Document date = "
                     + ISO8601Formatter.FORMATTER.format(new Date(oldDate)) + " is not older than crawl profile recrawl minimum date = "
@@ -467,6 +474,20 @@ public final class CrawlStacker implements WorkflowTask<Request>{
         }
 
         return null;
+    }
+
+    private boolean storedMetadataIsPoor(final byte[] urlhash) {
+        try {
+            final SolrDocument document = this.indexSegment.fulltext().getDefaultConnector().getDocumentById(
+                    ASCII.String(urlhash),
+                    CollectionSchema.sku.getSolrFieldName(),
+                    CollectionSchema.title.getSolrFieldName(),
+                    CollectionSchema.description_txt.getSolrFieldName(),
+                    CollectionSchema.author.getSolrFieldName());
+            return MetadataQuality.isPoor(document);
+        } catch (final IOException e) {
+            return false;
+        }
     }
 
     /**
