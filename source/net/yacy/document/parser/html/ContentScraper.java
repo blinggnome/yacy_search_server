@@ -74,6 +74,8 @@ public class ContentScraper extends AbstractScraper implements Scraper {
 
     private final static int MAX_TAGSIZE = 1024 * 1024;
     public static final int MAX_DOCSIZE = 40 * 1024 * 1024;
+    private final static int MAX_TITLE_LENGTH = 1024;
+    private final static int FALLBACK_TITLE_LENGTH = 240;
 
     private final char degree = '\u00B0';
     private final char[] minuteCharsHTML = "&#039;".toCharArray();
@@ -980,8 +982,8 @@ public class ContentScraper extends AbstractScraper implements Scraper {
         } else if ((tag.tagType == TagType.h6) && (tag.content.length() < 1024)) {
             h = cleanLine(CharacterCoding.html2unicode(stripAllTags(tag.content.getChars())));
             if (h.length() > 0) this.headlines[5].add(h);
-        } else if ((tag.tagType == TagType.title) && (tag.content.length() < 1024)) {
-            h = cleanLine(CharacterCoding.html2unicode(stripAllTags(tag.content.getChars())));
+        } else if (tag.tagType == TagType.title) {
+            h = cleanTitle(CharacterCoding.html2unicode(stripAllTags(tag.content.getChars())));
             if (h.length() > 0) {
                 this.titles.add(h);
                 this.evaluationScores.match(Element.title, h);
@@ -1111,6 +1113,39 @@ public class ContentScraper extends AbstractScraper implements Scraper {
         final ArrayList<String> t = new ArrayList<>();
         t.addAll(this.titles);
         return t;
+    }
+
+    private static String cleanTitle(final String title) {
+        final String cleaned = cleanLine(title);
+        if (cleaned.length() <= MAX_TITLE_LENGTH) return cleaned;
+
+        final String[] lines = title.split("\\r?\\n");
+        for (final String line : lines) {
+            final String candidate = cleanLine(line);
+            if (candidate.length() > 0) return shortenTitle(candidate);
+        }
+
+        return shortenTitle(cleaned);
+    }
+
+    private static String shortenTitle(final String title) {
+        if (title.length() <= MAX_TITLE_LENGTH) return title;
+
+        int end = -1;
+        final int searchLimit = Math.min(title.length(), FALLBACK_TITLE_LENGTH);
+        for (int i = searchLimit - 1; i >= 60; i--) {
+            if (SentenceReader.punctuation(title.charAt(i))) {
+                end = i + 1;
+                break;
+            }
+        }
+        if (end < 0) {
+            end = searchLimit;
+            while (end > 60 && !Character.isWhitespace(title.charAt(end - 1))) end--;
+            if (end <= 60) end = searchLimit;
+        }
+
+        return title.substring(0, end).trim();
     }
 
     public String[] getHeadlines(final int i) {

@@ -262,6 +262,40 @@ public class htmlParserTest {
         assertEquals(title, scraper.getTitles().get(0));
         assertEquals(description, scraper.getDescriptions().get(0));
     }
+
+    /**
+     * Very long title tags should keep a concise leading title instead of being
+     * discarded and replaced by a generic page heading.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testOversizedTitleFallsBackToFirstTitleLine() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final String title = "Specific post title line";
+        final StringBuilder longTitle = new StringBuilder(title);
+        longTitle.append("\n\n");
+        for (int i = 0; i < 80; i++) {
+            longTitle.append("Additional body-like title text that should not become the document title. ");
+        }
+        longTitle.append("- Site Name");
+        final String testhtml = "<html><head><title>" + longTitle + "</title></head>"
+                + "<body><h1>Generic Site Name</h1><p>Visible article text for this parser regression.</p></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertEquals(title, scraper.getTitles().get(0));
+    }
 	
 	/**
 	 * Test the htmlParser.parse() method, when filtering out div elements on their CSS class.
