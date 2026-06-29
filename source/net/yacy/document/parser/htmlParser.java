@@ -273,7 +273,7 @@ public class htmlParser extends AbstractParser implements Parser {
         final YouTubeOEmbedMetadata youtubeMetadata = YouTubeOEmbedMetadata.loadIfNeeded(location, titles, descriptions, rawSource);
         if (youtubeMetadata != null) {
             titles = new ArrayList<>();
-            titles.add(youtubeMetadata.title);
+            titles.add(youtubeMetadata.indexTitle());
             descriptions = new ArrayList<>();
             descriptions.add(youtubeMetadata.description());
             if (author.length() == 0) author = youtubeMetadata.authorName;
@@ -328,6 +328,10 @@ public class htmlParser extends AbstractParser implements Parser {
         private String description() {
             if (this.sourceDescription.length() > 0) return this.sourceDescription;
             return "YouTube video by " + this.authorName + ": " + this.title;
+        }
+
+        private String indexTitle() {
+            return this.title.endsWith(" - YouTube") ? this.title : this.title + " - YouTube";
         }
 
         private static YouTubeOEmbedMetadata loadIfNeeded(final DigestURL location, final List<String> titles, final List<String> descriptions, final String rawSource) {

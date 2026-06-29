@@ -14,6 +14,8 @@ Parsed soft-error pages are also rejected when their title indicates a 404/not-f
 
 Operators can also configure crawler content rejection rules from the Filter & Blacklists admin area. These rules are plain-text, case-insensitive substring matches against parsed title, description, and body text. A matching document is rejected before indexing and any existing indexed record for that URL is removed.
 
+Parked-domain detections can be reviewed from the crawler monitor and manually purged by domain. The cleanup action targets indexed records for the root domain and discovered subdomains, then adds two YaCy-native blacklist entries to `url.domain_for_sale.black`: one for the root domain and one for subdomains, for example `example.com/.*` and `*.example.com/.*`. The cleanup status reports targeted host names separately from newly added, already-present, or failed blacklist rules. The Filter & Blacklists > Dead Domains page can enable automatic cleanup so detected dead domains are purged and blacklisted during crawl instead of waiting for the manual crawler-monitor button. Future work should revisit whether these can be safely collapsed into one rule without triggering YaCy blacklist escaping or matching problems. If parked-domain cleanup produces many thousands of rules, measure blacklist lookup cost and consider a more compact representation or a dedicated domain-ban list.
+
 ## Authentication handoff pages
 
 Some URLs return authentication protocol handoff pages instead of content. For example, SAML endpoints may return an auto-submit HTML form containing a hidden `SAMLRequest` and a `RelayState` target URL. The current parser marks these documents as `noindex,nofollow` so they should not become searchable content.

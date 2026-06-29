@@ -138,6 +138,18 @@ public class status_p {
         prop.put("crawlProfiles_count", count);
         prop.put("crawlProfiles", count == 0 ? 0 : 1);
 
+        count = 0;
+        for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActions()) {
+            prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
+            prop.putXML("crawlerRuleActions_list_" + count + "_url", action.url);
+            prop.putXML("crawlerRuleActions_list_" + count + "_action", action.action);
+            prop.putXML("crawlerRuleActions_list_" + count + "_cleanupDomain", action.cleanupDomain);
+            count++;
+        }
+        prop.put("crawlerRuleActions_list", count);
+        prop.put("crawlerRuleActions_count", count);
+        prop.put("crawlerRuleActions", count == 0 ? 0 : 1);
+
         prop.put("postprocessingRunning", CollectionConfiguration.postprocessingRunning ? 1 : 0);
 
         final boolean processCollection =  sb.index.fulltext().getDefaultConfiguration().contains(CollectionSchema.process_sxt) && (sb.index.connectedCitation() || sb.index.fulltext().useWebgraph());

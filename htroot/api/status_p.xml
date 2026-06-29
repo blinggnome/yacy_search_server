@@ -76,6 +76,20 @@
   #{/list}# 
   </crawls>
 #(/crawlProfiles)#
+
+<!-- recent crawler rule action list -->
+#(crawlerRuleActions)#<crawlerRuleActions count="0"/>::
+  <crawlerRuleActions count="#[count]#">
+  #{list}#
+    <action>
+      <time>#[time]#</time>
+      <url>#[url]#</url>
+      <summary>#[action]#</summary>
+      <cleanupDomain>#[cleanupDomain]#</cleanupDomain>
+    </action>
+  #{/list}#
+  </crawlerRuleActions>
+#(/crawlerRuleActions)#
   
   <postprocessing>
     <collectionRemainingCount>#[postprocessingCollectionRemainingCount]#</collectionRemainingCount>

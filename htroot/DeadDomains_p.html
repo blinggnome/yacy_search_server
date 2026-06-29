@@ -1,0 +1,43 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>YaCy '#[clientname]#': Dead Domains</title>
+    #%env/templates/metas.template%#
+  </head>
+  <body id="Blacklist">
+    #%env/templates/header.template%#
+    #%env/templates/submenuBlacklist.template%#
+
+    <h2>Dead Domains</h2>
+    <p>
+      During crawling, YaCy can detect domains that now redirect to domain-sale or parked-domain landing pages.
+      This tool controls whether those detected dead domains are only reported in the crawler monitor or are
+      automatically cleaned up.
+    </p>
+    <p>
+      When automatic cleanup is enabled, detected domains are added to <code>url.domain_for_sale.black</code>
+      with root and subdomain rules, and indexed URLs for that domain and discovered subdomains are removed.
+    </p>
+
+    #(status)#
+    ::
+    <div class="alert #(success)#alert-danger::alert-success#(/success)#" role="alert">#[message]#</div>
+    #(/status)#
+
+    <fieldset>
+      <legend>Automation</legend>
+      <form action="DeadDomains_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <label>
+          <input type="checkbox" name="autoCleanup" value="true" #(autoCleanup)#::checked="checked" #(/autoCleanup)#/>
+          Automatically remove and blacklist dead domains found during crawl
+        </label>
+        <p>
+          If unchecked, parked-domain detections remain visible in the crawler monitor with a manual cleanup button.
+        </p>
+        <input type="submit" name="save" class="btn btn-primary" value="Save" />
+      </form>
+    </fieldset>
+
+    #%env/templates/footer.template%#
+  </body>
+</html>

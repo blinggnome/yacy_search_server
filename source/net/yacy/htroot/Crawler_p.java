@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,10 +51,12 @@ import net.yacy.cora.document.id.AnchorURL;
 import net.yacy.cora.document.id.DigestURL;
 import net.yacy.cora.document.id.MultiProtocolURL;
 import net.yacy.cora.federate.solr.FailCategory;
+import net.yacy.cora.federate.solr.connector.AbstractSolrConnector;
 import net.yacy.cora.federate.solr.instance.EmbeddedInstance;
 import net.yacy.cora.federate.yacy.CacheStrategy;
 import net.yacy.cora.protocol.ClientIdentification;
 import net.yacy.cora.protocol.RequestHeader;
+import net.yacy.cora.sorting.ReversibleScoreMap;
 import net.yacy.cora.util.ConcurrentLog;
 import net.yacy.cora.util.SpaceExceededException;
 import net.yacy.crawler.CrawlSwitchboard;
@@ -62,6 +65,7 @@ import net.yacy.crawler.data.CrawlProfile;
 import net.yacy.crawler.data.CrawlProfile.CrawlAttribute;
 import net.yacy.crawler.data.NoticedURL.StackType;
 import net.yacy.crawler.retrieval.SitemapImporter;
+import net.yacy.data.TransactionManager;
 import net.yacy.data.WorkTables;
 import net.yacy.document.Document;
 import net.yacy.document.VocabularyScraper;
@@ -73,6 +77,7 @@ import net.yacy.kelondro.util.FileUtils;
 import net.yacy.kelondro.workflow.BusyThread;
 import net.yacy.peers.NewsPool;
 import net.yacy.repository.Blacklist.BlacklistType;
+import net.yacy.repository.BlacklistHelper;
 import net.yacy.search.Switchboard;
 import net.yacy.search.SwitchboardConstants;
 import net.yacy.search.index.Fulltext;
@@ -98,6 +103,10 @@ public class Crawler_p {
         // inital values for AJAX Elements (without JavaScript)
         final serverObjects prop = new serverObjects();
         prop.put("rejected", 0);
+        final String transactionToken = TransactionManager.getTransactionToken(header);
+        prop.put(TransactionManager.TRANSACTION_TOKEN_PARAM, transactionToken);
+        prop.put("crawlerRuleActions_" + TransactionManager.TRANSACTION_TOKEN_PARAM, transactionToken);
+        prop.put("crawlerRuleActions_cleanupResult", 0);
 
         // check for JSONP
         if (post != null && post.containsKey("callback") ) {
@@ -111,6 +120,55 @@ public class Crawler_p {
 
         final Segment segment = sb.index;
         final Fulltext fulltext = segment.fulltext();
+        if (post != null && post.containsKey("parkedDomainCleanup")) {
+            TransactionManager.checkPostTransaction(header, post);
+            final String cleanupDomain = normalizeCleanupDomain(post.get("domain", ""));
+            final String blacklistName = Switchboard.DOMAIN_FOR_SALE_BLACKLIST;
+            if (cleanupDomain.length() == 0 || blacklistName == null || blacklistName.length() == 0) {
+                prop.put("crawlerRuleActions_cleanupResult", 1);
+                prop.put("crawlerRuleActions_cleanupResult_success", 0);
+                prop.putHTML("crawlerRuleActions_cleanupResult_message", "Domain cleanup was not run: invalid domain or no blacklist is available.");
+            } else {
+                try {
+                    final Set<String> hostnames = indexedHostsForDomain(fulltext, cleanupDomain);
+                    hostnames.add(cleanupDomain);
+                    hostnames.add("www." + cleanupDomain);
+                    fulltext.deleteStaleDomainNames(hostnames, null);
+                    try {
+                        segment.loadTimeIndex().clear();
+                    } catch (final IOException e) {
+                        ConcurrentLog.warn("Crawler_p", "Could not clear load-time index after parked domain cleanup", e);
+                    }
+                    fulltext.commit(true);
+                    final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(blacklistName)));
+                    final String rootBlacklistRule = BlacklistHelper.prepareEntry(cleanupDomain + "/.*");
+                    final String subdomainBlacklistRule = BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*");
+                    final boolean rootAlreadyPresent = existingBlacklistEntries.contains(rootBlacklistRule);
+                    final boolean subdomainAlreadyPresent = existingBlacklistEntries.contains(subdomainBlacklistRule);
+                    final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule);
+                    final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule);
+                    final int blacklistRulesAlreadyPresent = (rootAlreadyPresent ? 1 : 0) + (subdomainAlreadyPresent ? 1 : 0);
+                    final int blacklistRulesAdded = (rootOk && !rootAlreadyPresent ? 1 : 0) + (subdomainOk && !subdomainAlreadyPresent ? 1 : 0);
+                    final int blacklistRulesFailed = (rootOk ? 0 : 1) + (subdomainOk ? 0 : 1);
+                    SearchEventCache.cleanupEvents(true);
+                    sb.tables.recordAPICall(post, "Crawler_p.html", WorkTables.TABLE_API_TYPE_STEERING,
+                            "purge and blacklist parked domain " + cleanupDomain);
+                    prop.put("crawlerRuleActions_cleanupResult", 1);
+                    prop.put("crawlerRuleActions_cleanupResult_success", rootOk && subdomainOk ? 1 : 0);
+                    prop.putHTML("crawlerRuleActions_cleanupResult_message",
+                            "Targeted " + hostnames.size() + " host name(s) for " + cleanupDomain
+                            + " and added " + blacklistRulesAdded + " blacklist rule(s) to " + blacklistName
+                            + (blacklistRulesAlreadyPresent > 0 ? " (" + blacklistRulesAlreadyPresent + " already present)" : "")
+                            + (blacklistRulesFailed > 0 ? " (" + blacklistRulesFailed + " failed)" : "")
+                            + ".");
+                } catch (final IOException e) {
+                    ConcurrentLog.warn("Crawler_p", "Could not purge indexed hosts for parked domain " + cleanupDomain, e);
+                    prop.put("crawlerRuleActions_cleanupResult", 1);
+                    prop.put("crawlerRuleActions_cleanupResult_success", 0);
+                    prop.putHTML("crawlerRuleActions_cleanupResult_message", "Domain cleanup failed for " + cleanupDomain + ": " + e.getMessage());
+                }
+            }
+        }
         final String localSolr = "solr/select?core=collection1&q=*:*&start=0&rows=3";
         String remoteSolr = env.getConfig(SwitchboardConstants.FEDERATED_SERVICE_SOLR_INDEXING_URL, localSolr);
         if (!remoteSolr.endsWith("/")) remoteSolr = remoteSolr + "/";
@@ -856,6 +914,26 @@ public class Crawler_p {
 
         prop.put("crawlProfilesShow_linkstructure", 0);
 
+        count = 0;
+        dark = true;
+        final String crawlerRuleActionsBlacklist = Switchboard.DOMAIN_FOR_SALE_BLACKLIST;
+        prop.putHTML("crawlerRuleActions_blacklist", crawlerRuleActionsBlacklist == null ? "" : crawlerRuleActionsBlacklist);
+        for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActions()) {
+            prop.put("crawlerRuleActions_list_" + count + "_dark", dark ? 1 : 0);
+            prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
+            prop.putHTML("crawlerRuleActions_list_" + count + "_url", action.url);
+            prop.putHTML("crawlerRuleActions_list_" + count + "_action", action.action);
+            prop.put("crawlerRuleActions_list_" + count + "_cleanup", action.cleanupDomain.length() == 0 ? 0 : 1);
+            prop.putHTML("crawlerRuleActions_list_" + count + "_cleanup_domain", action.cleanupDomain);
+            prop.putHTML("crawlerRuleActions_list_" + count + "_cleanup_blacklist", crawlerRuleActionsBlacklist == null ? "" : crawlerRuleActionsBlacklist);
+            prop.put("crawlerRuleActions_list_" + count + "_cleanup_" + TransactionManager.TRANSACTION_TOKEN_PARAM, transactionToken);
+            dark = !dark;
+            count++;
+        }
+        prop.put("crawlerRuleActions_list", count);
+        prop.put("crawlerRuleActions_count", count);
+        prop.put("crawlerRuleActions", count == 0 ? 0 : 1);
+
         if (post != null) { // handle config button to display graphic
             if (post.get("hidewebstructuregraph") != null) sb.setConfig(SwitchboardConstants.DECORATION_GRAFICS_LINKSTRUCTURE, false);
             if (post.get("showwebstructuregraph") != null) sb.setConfig(SwitchboardConstants.DECORATION_GRAFICS_LINKSTRUCTURE, true);
@@ -932,6 +1010,59 @@ public class Crawler_p {
         // get links and generate filter
         hyperlinks_from_file = scraper.getAnchors();
         return hyperlinks_from_file;
+    }
+
+    private static String normalizeCleanupDomain(final String domain) {
+        if (domain == null) {
+            return "";
+        }
+        String normalized = domain.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+            try {
+                normalized = new MultiProtocolURL(normalized).getHost();
+            } catch (final MalformedURLException e) {
+                return "";
+            }
+        }
+        if (normalized.startsWith("www.")) {
+            normalized = normalized.substring(4);
+        }
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.length() == 0 || normalized.indexOf('/') >= 0 || normalized.indexOf('*') >= 0 || normalized.indexOf('\\') >= 0) {
+            return "";
+        }
+        if (!normalized.matches("[a-z0-9][a-z0-9.-]*\\.[a-z0-9-]+")) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private static Set<String> indexedHostsForDomain(final Fulltext fulltext, final String domain) throws IOException {
+        final Set<String> hostnames = new HashSet<String>();
+        final Map<String, ReversibleScoreMap<String>> facets = fulltext.getDefaultConnector().getFacets(
+                AbstractSolrConnector.CATCHALL_QUERY,
+                1000000,
+                CollectionSchema.host_s.getSolrFieldName());
+        final ReversibleScoreMap<String> hostFacet = facets.get(CollectionSchema.host_s.getSolrFieldName());
+        if (hostFacet == null) {
+            return hostnames;
+        }
+        for (final String host : hostFacet) {
+            if (hostMatchesDomain(host, domain)) {
+                hostnames.add(host);
+            }
+        }
+        return hostnames;
+    }
+
+    private static boolean hostMatchesDomain(final String host, final String domain) {
+        if (host == null || domain == null) {
+            return false;
+        }
+        final String normalizedHost = host.toLowerCase(Locale.ROOT);
+        return normalizedHost.equals(domain) || normalizedHost.endsWith("." + domain);
     }
 
     private static Date timeParser(final boolean recrawlIfOlderCheck, final int number, final String unit) {

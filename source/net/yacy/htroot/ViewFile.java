@@ -212,6 +212,15 @@ public class ViewFile {
         }
 
         final String[] wordArray = wordArray(post.get("words", ""));
+        final String crawlerSourceRejectionRule = sb.crawlerContentRejection == null ? null
+                : sb.crawlerContentRejection.firstMatchingRule(response.getContent(), response.getCharacterEncoding());
+        if (crawlerSourceRejectionRule != null && !viewMode.equals("iframeWeb")) {
+            prop.put("error", "4");
+            prop.putHTML("error_errorText", "Resource rejected by crawler source rule '" + crawlerSourceRejectionRule + "'");
+            prop.put("viewMode", VIEW_MODE_NO_TEXT);
+            return prop;
+        }
+
         if (viewMode.equals("iframeWeb")) {
             prop.put("viewMode", VIEW_MODE_AS_IFRAME_FROM_WEB);
             prop.put("viewMode_url", url.toNormalform(true));

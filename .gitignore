@@ -32,5 +32,6 @@ yacy.log
 /.project
 /ivy
 /lib
+backups/
 vagrant_yacy/.vagrant/
 .gradle

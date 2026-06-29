@@ -51,16 +51,23 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.Reader;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URL;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -83,6 +90,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.zip.Deflater;
@@ -101,6 +109,7 @@ import org.apache.solr.search.SyntaxError;
 
 import com.cybozu.labs.langdetect.DetectorFactory;
 import com.cybozu.labs.langdetect.LangDetectException;
+import com.google.common.net.InternetDomainName;
 import com.google.common.io.Files;
 
 import net.yacy.yacy;
@@ -129,11 +138,13 @@ import net.yacy.cora.order.NaturalOrder;
 import net.yacy.cora.protocol.ClientIdentification;
 import net.yacy.cora.protocol.ConnectionInfo;
 import net.yacy.cora.protocol.Domains;
+import net.yacy.cora.protocol.HeaderFramework;
 import net.yacy.cora.protocol.RequestHeader;
 import net.yacy.cora.protocol.Scanner;
 import net.yacy.cora.protocol.TimeoutRequest;
 import net.yacy.cora.protocol.http.HTTPClient;
 import net.yacy.cora.protocol.http.ProxySettings;
+import net.yacy.cora.sorting.ReversibleScoreMap;
 import net.yacy.cora.util.CommonPattern;
 import net.yacy.cora.util.ConcurrentLog;
 import net.yacy.cora.util.Memory;
@@ -220,6 +231,7 @@ import net.yacy.peers.operation.yacyRelease;
 import net.yacy.peers.operation.yacyUpdateLocation;
 import net.yacy.repository.Blacklist;
 import net.yacy.repository.Blacklist.BlacklistType;
+import net.yacy.repository.BlacklistHelper;
 import net.yacy.repository.FilterEngine;
 import net.yacy.repository.LoaderDispatcher;
 import net.yacy.search.index.Fulltext;
@@ -324,6 +336,29 @@ public final class Switchboard extends serverSwitch {
     private boolean startupAction = true; // this is set to false after the first event
     private static Switchboard sb;
     public HashMap<String, Object[]> crawlJobsStatus = new HashMap<>();
+    public static final String CRAWLER_DEAD_DOMAIN_AUTO_CLEANUP = "crawler.deadDomains.autoCleanup";
+    public static final String DOMAIN_FOR_SALE_BLACKLIST = "url.domain_for_sale.black";
+    private static final int CRAWLER_RULE_ACTION_LIMIT = 50;
+    private static final int ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS = 5000;
+    private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_BYTES = 256 * 1024;
+    private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_HTTP_REDIRECTS = 3;
+    private static final Pattern META_REFRESH_REDIRECT_PATTERN = Pattern.compile(
+            "(?is)<meta\\s+[^>]*http-equiv\\s*=\\s*['\"]?refresh['\"]?[^>]*content\\s*=\\s*['\"][^'\"]*url\\s*=\\s*([^'\";>]+)[^'\"]*['\"]");
+    private static final Pattern JS_LOCATION_REPLACE_REDIRECT_PATTERN = Pattern.compile(
+            "(?is)\\blocation\\.replace\\s*\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)");
+    private static final Pattern JS_LOCATION_ASSIGN_REDIRECT_PATTERN = Pattern.compile(
+            "(?is)\\b(?:window\\.|document\\.)?location(?:\\.href)?\\s*=\\s*['\"]([^'\"]+)['\"]");
+    private static final String[] PARKED_DOMAIN_BODY_INDICATORS = new String[] {
+            "is parked free, courtesy of godaddy.com",
+            "parking-lander",
+            "window.lander_system",
+            "buy this domain",
+            "this domain is registered, but may still be available",
+            "domain for sale",
+            "get this domain",
+            "afternic"
+    };
+    private final Deque<CrawlerRuleAction> crawlerRuleActions = new ArrayDeque<>();
 
     public Switchboard(final File dataPath, final File appPath, final String initPath, final String configPath) {
         super(dataPath, appPath, initPath, configPath);
@@ -1790,6 +1825,62 @@ public final class Switchboard extends serverSwitch {
         return sb;
     }
 
+    public static final class CrawlerRuleAction {
+
+        public final long timestamp;
+        public final String url;
+        public final String action;
+        public final String cleanupDomain;
+
+        private CrawlerRuleAction(final long timestamp, final String url, final String action, final String cleanupDomain) {
+            this.timestamp = timestamp;
+            this.url = url;
+            this.action = action;
+            this.cleanupDomain = cleanupDomain;
+        }
+    }
+
+    public void recordCrawlerRuleAction(final DigestURL url, final String action) {
+        if (url == null || action == null || action.length() == 0) {
+            return;
+        }
+        synchronized (this.crawlerRuleActions) {
+            this.crawlerRuleActions.addFirst(new CrawlerRuleAction(
+                    System.currentTimeMillis(),
+                    url.toNormalform(true),
+                    action.length() > 300 ? action.substring(0, 300) : action,
+                    crawlerRuleCleanupDomain(url, action)));
+            while (this.crawlerRuleActions.size() > CRAWLER_RULE_ACTION_LIMIT) {
+                this.crawlerRuleActions.removeLast();
+            }
+        }
+    }
+
+    private static String crawlerRuleCleanupDomain(final DigestURL url, final String action) {
+        if (url == null || action == null || action.indexOf("parked domain candidate") < 0) {
+            return "";
+        }
+        final String host = url.getHost();
+        if (host == null || host.length() == 0) {
+            return "";
+        }
+        final String normalizedHost = host.toLowerCase(Locale.ROOT);
+        try {
+            final InternetDomainName domainName = InternetDomainName.from(normalizedHost);
+            if (domainName.hasPublicSuffix()) {
+                return domainName.topPrivateDomain().toString();
+            }
+        } catch (final IllegalArgumentException e) {
+        }
+        return normalizedHost.startsWith("www.") ? normalizedHost.substring(4) : normalizedHost;
+    }
+
+    public List<CrawlerRuleAction> crawlerRuleActions() {
+        synchronized (this.crawlerRuleActions) {
+            return new ArrayList<>(this.crawlerRuleActions);
+        }
+    }
+
     public boolean isP2PMode() {
         return this.getConfig(SwitchboardConstants.NETWORK_BOOTSTRAP_SEEDLIST_STUB + "0", null) != null;
     }
@@ -3006,7 +3097,8 @@ public final class Switchboard extends serverSwitch {
         if (crawlerSourceRejectionRule != null) {
             final String info = "Not Parsed Resource '" + response.url().toNormalform(true) + "': rejected by crawler source rule '" + crawlerSourceRejectionRule + "'";
             if (this.log.isInfo()) this.log.info(info);
-            removeExistingIndexDocument(response.url(), "crawler source rule '" + crawlerSourceRejectionRule + "'");
+            final int removed = removeRejectedIndexDocuments(response.url(), "crawler source rule '" + crawlerSourceRejectionRule + "'");
+            recordCrawlerRuleAction(response.url(), "Rejected before parsing by crawler source rule '" + crawlerSourceRejectionRule + "'" + removalSummary(removed));
             this.crawlQueues.errorURL.push(response.url(), response.depth(), response.profile(), FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
             return null;
         }
@@ -3080,6 +3172,10 @@ public final class Switchboard extends serverSwitch {
             if (newDocs.size() != documents.length) {
                 documents = (Document[]) newDocs.toArray();
             }
+        }
+
+        for (final Document document : documents) {
+            recordYouTubeParserAction(response, document);
         }
 
         // collect anchors within remaining documents
@@ -3284,7 +3380,8 @@ public final class Switchboard extends serverSwitch {
             if (crawlerContentRejectionRule != null) {
                 final String info = "Not Condensed Resource '" + urls + "': rejected by crawler content rule '" + crawlerContentRejectionRule + "'";
                 if (this.log.isInfo()) this.log.info(info);
-                removeExistingIndexDocument(in.queueEntry.url(), "crawler content rule '" + crawlerContentRejectionRule + "'");
+                final int removed = removeRejectedIndexDocuments(document.dc_source(), "crawler content rule '" + crawlerContentRejectionRule + "'");
+                recordCrawlerRuleAction(document.dc_source(), "Rejected parsed document by crawler content rule '" + crawlerContentRejectionRule + "'" + removalSummary(removed));
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
                 continue docloop;
             }
@@ -3292,15 +3389,20 @@ public final class Switchboard extends serverSwitch {
             if (MetadataQuality.isErrorPage(document)) {
                 final String info = "Not Condensed Resource '" + urls + "': rejected parsed error page";
                 if (this.log.isInfo()) this.log.info(info);
-                removeExistingIndexDocument(in.queueEntry.url(), "parsed error page");
+                final int removed = removeRejectedIndexDocuments(document.dc_source(), "parsed error page");
+                recordCrawlerRuleAction(document.dc_source(), "Rejected parsed error page" + removalSummary(removed));
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
                 continue docloop;
             }
 
             if (MetadataQuality.isZeroContentStub(document)) {
-                final String info = "Not Condensed Resource '" + urls + "': rejected zero-content document";
+                final ParkedDomainCandidate parkedDomainCandidate = inspectZeroContentClientRedirect(in.queueEntry);
+                final String parkedDomainSummary = parkedDomainCandidate == null ? "" : parkedDomainCandidate.summary();
+                final String info = "Not Condensed Resource '" + urls + "': rejected zero-content document" + parkedDomainSummary;
                 if (this.log.isInfo()) this.log.info(info);
-                removeExistingIndexDocument(in.queueEntry.url(), "zero-content document");
+                final int removed = removeRejectedIndexDocuments(document.dc_source(), "zero-content document");
+                recordCrawlerRuleAction(document.dc_source(), crawlerParkedDomainAction(document.dc_source(), parkedDomainCandidate,
+                        "Rejected zero-content document" + parkedDomainSummary + removalSummary(removed)));
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
                 continue docloop;
             }
@@ -3456,21 +3558,27 @@ public final class Switchboard extends serverSwitch {
 
         final String crawlerContentRejectionRule = this.crawlerContentRejection.firstMatchingRule(document);
         if (crawlerContentRejectionRule != null) {
-            removeExistingIndexDocument(url, "crawler content rule '" + crawlerContentRejectionRule + "', process case=" + processCase);
+            final int removed = removeRejectedIndexDocuments(url, "crawler content rule '" + crawlerContentRejectionRule + "', process case=" + processCase);
+            recordCrawlerRuleAction(url, "Rejected at index storage by crawler content rule '" + crawlerContentRejectionRule + "'" + removalSummary(removed));
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected by crawler content rule '" + crawlerContentRejectionRule + "', process case=" + processCase, -1);
             return;
         }
 
         if (MetadataQuality.isZeroContentStub(document)) {
-            removeExistingIndexDocument(url, "zero-content document, process case=" + processCase);
+            final ParkedDomainCandidate parkedDomainCandidate = inspectZeroContentClientRedirect(queueEntry);
+            final String parkedDomainSummary = parkedDomainCandidate == null ? "" : parkedDomainCandidate.summary();
+            final int removed = removeRejectedIndexDocuments(url, "zero-content document, process case=" + processCase);
+            recordCrawlerRuleAction(url, crawlerParkedDomainAction(url, parkedDomainCandidate,
+                    "Rejected zero-content document at index storage" + parkedDomainSummary + removalSummary(removed)));
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
-                    "rejected zero-content document, process case=" + processCase, -1);
+                    "rejected zero-content document" + parkedDomainSummary + ", process case=" + processCase, -1);
             return;
         }
 
         if (MetadataQuality.isErrorPage(document)) {
-            removeExistingIndexDocument(url, "parsed error page, process case=" + processCase);
+            final int removed = removeRejectedIndexDocuments(url, "parsed error page, process case=" + processCase);
+            recordCrawlerRuleAction(url, "Rejected parsed error page at index storage" + removalSummary(removed));
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected parsed error page, process case=" + processCase, -1);
             return;
@@ -3512,6 +3620,7 @@ public final class Switchboard extends serverSwitch {
         if (existingMetadataIsBetter(url, document)) {
             this.log.info("Not Indexed Resource '" + queueEntry.url().toNormalform(false, true)
                     + "': existing metadata is richer than newly parsed metadata.");
+            recordCrawlerRuleAction(url, "Skipped indexing because existing metadata is richer");
             return;
         }
 
@@ -3604,35 +3713,52 @@ public final class Switchboard extends serverSwitch {
         }
     }
 
-    private void removeExistingIndexDocument(final DigestURL url, final String reason) {
+    private int removeRejectedIndexDocuments(final DigestURL url, final String reason) {
+        final int youtubeRemoved = removeYouTubeIndexDocuments(url, reason, true);
+        if (youtubeRemoved > 0) {
+            return youtubeRemoved;
+        }
+        return removeExistingIndexDocument(url, reason);
+    }
+
+    private int removeExistingIndexDocument(final DigestURL url, final String reason) {
         if (url == null || this.index == null || this.index.fulltext().getDefaultConnector() == null) {
-            return;
+            return 0;
         }
         try {
             final SolrDocument existing = this.index.fulltext().getDefaultConnector().getDocumentById(
                     ASCII.String(url.hash()),
                     CollectionSchema.httpstatus_i.getSolrFieldName());
             if (existing == null) {
-                return;
+                return 0;
             }
             this.index.fulltext().remove(url.hash());
             this.log.info("Removed previously indexed resource '" + url.toNormalform(true) + "': " + reason);
+            return 1;
         } catch (final IOException e) {
             this.log.warn("Failed to check existing indexed resource '" + url.toNormalform(true) + "' before removal: " + e.getMessage());
+            return 0;
         }
     }
 
     private void removeNonCanonicalYouTubeIndexDocuments(final DigestURL url) {
+        final int removed = removeYouTubeIndexDocuments(url, "non-canonical YouTube cleanup", false);
+        if (removed > 0) {
+            recordCrawlerRuleAction(url, "Removed " + removed + " non-canonical YouTube index record(s)");
+        }
+    }
+
+    private int removeYouTubeIndexDocuments(final DigestURL url, final String reason, final boolean includeCanonical) {
         if (url == null || this.index == null || this.index.fulltext().getDefaultConnector() == null) {
-            return;
+            return 0;
         }
         final String canonicalUrl = htmlParser.canonicalYouTubeVideoUrl(url);
         if (canonicalUrl == null) {
-            return;
+            return 0;
         }
         final String videoId = youtubeVideoIdFromCanonicalUrl(canonicalUrl);
         if (videoId.length() == 0) {
-            return;
+            return 0;
         }
 
         final Collection<String> deleteIds = new ArrayList<>();
@@ -3658,7 +3784,7 @@ public final class Switchboard extends serverSwitch {
                     continue;
                 }
                 final String indexedUrl = (String) skuObject;
-                if (canonicalUrl.equals(indexedUrl)) {
+                if (!includeCanonical && canonicalUrl.equals(indexedUrl)) {
                     continue;
                 }
                 try {
@@ -3676,7 +3802,411 @@ public final class Switchboard extends serverSwitch {
 
         if (!deleteIds.isEmpty()) {
             this.index.fulltext().remove(deleteIds);
-            this.log.info("Removed " + deleteIds.size() + " non-canonical YouTube index record(s) for " + canonicalUrl);
+            this.log.info("Removed " + deleteIds.size() + " YouTube index record(s) for " + canonicalUrl + ": " + reason);
+        }
+        return deleteIds.size();
+    }
+
+    private static String removalSummary(final int removed) {
+        if (removed <= 0) return "; no existing index record found";
+        if (removed == 1) return "; removed 1 existing index record";
+        return "; removed " + removed + " existing index records";
+    }
+
+    private String crawlerParkedDomainAction(final DigestURL url, final ParkedDomainCandidate parkedDomainCandidate, final String fallbackAction) {
+        if (url == null || parkedDomainCandidate == null || !this.getConfigBool(CRAWLER_DEAD_DOMAIN_AUTO_CLEANUP, false)) {
+            return fallbackAction;
+        }
+        final String cleanupDomain = crawlerRuleCleanupDomain(url, parkedDomainCandidate.summary());
+        if (cleanupDomain.length() == 0) {
+            return fallbackAction;
+        }
+        try {
+            final DeadDomainCleanupResult cleanup = cleanupDeadDomain(cleanupDomain);
+            return "Domain '" + cleanupDomain + "' is no longer active. It has been blacklisted in "
+                    + DOMAIN_FOR_SALE_BLACKLIST + " and all matching URLs were removed from the index. "
+                    + cleanup.summary();
+        } catch (final IOException e) {
+            this.log.warn("Could not automatically clean dead domain '" + cleanupDomain + "': " + e.getMessage());
+            return fallbackAction + "; automatic dead-domain cleanup failed for " + cleanupDomain + ": " + e.getMessage();
+        }
+    }
+
+    private DeadDomainCleanupResult cleanupDeadDomain(final String cleanupDomain) throws IOException {
+        final Set<String> hostnames = indexedHostsForDomain(cleanupDomain);
+        hostnames.add(cleanupDomain);
+        hostnames.add("www." + cleanupDomain);
+        this.index.fulltext().deleteStaleDomainNames(hostnames, null);
+        try {
+            this.index.loadTimeIndex().clear();
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not clear load-time index after dead-domain cleanup", e);
+        }
+        this.index.fulltext().commit(true);
+
+        final String rootBlacklistRule = BlacklistHelper.prepareEntry(cleanupDomain + "/.*");
+        final String subdomainBlacklistRule = BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*");
+        final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(DOMAIN_FOR_SALE_BLACKLIST)));
+        final boolean rootAlreadyPresent = existingBlacklistEntries.contains(rootBlacklistRule);
+        final boolean subdomainAlreadyPresent = existingBlacklistEntries.contains(subdomainBlacklistRule);
+        final boolean rootOk = BlacklistHelper.addBlacklistEntry(DOMAIN_FOR_SALE_BLACKLIST, rootBlacklistRule);
+        final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(DOMAIN_FOR_SALE_BLACKLIST, subdomainBlacklistRule);
+        SearchEventCache.cleanupEvents(true);
+
+        return new DeadDomainCleanupResult(
+                hostnames.size(),
+                (rootOk && !rootAlreadyPresent ? 1 : 0) + (subdomainOk && !subdomainAlreadyPresent ? 1 : 0),
+                (rootAlreadyPresent ? 1 : 0) + (subdomainAlreadyPresent ? 1 : 0),
+                (rootOk ? 0 : 1) + (subdomainOk ? 0 : 1));
+    }
+
+    private Set<String> indexedHostsForDomain(final String domain) throws IOException {
+        final Set<String> hostnames = new HashSet<>();
+        final Map<String, ReversibleScoreMap<String>> facets = this.index.fulltext().getDefaultConnector().getFacets(
+                AbstractSolrConnector.CATCHALL_QUERY,
+                1000000,
+                CollectionSchema.host_s.getSolrFieldName());
+        final ReversibleScoreMap<String> hostFacet = facets.get(CollectionSchema.host_s.getSolrFieldName());
+        if (hostFacet == null) {
+            return hostnames;
+        }
+        for (final String host : hostFacet) {
+            if (hostMatchesDomain(host, domain)) {
+                hostnames.add(host);
+            }
+        }
+        return hostnames;
+    }
+
+    private static boolean hostMatchesDomain(final String host, final String domain) {
+        if (host == null || domain == null) {
+            return false;
+        }
+        final String normalizedHost = host.toLowerCase(Locale.ROOT);
+        return normalizedHost.equals(domain) || normalizedHost.endsWith("." + domain);
+    }
+
+    private static final class DeadDomainCleanupResult {
+        private final int targetedHosts;
+        private final int rulesAdded;
+        private final int rulesAlreadyPresent;
+        private final int rulesFailed;
+
+        private DeadDomainCleanupResult(final int targetedHosts, final int rulesAdded, final int rulesAlreadyPresent, final int rulesFailed) {
+            this.targetedHosts = targetedHosts;
+            this.rulesAdded = rulesAdded;
+            this.rulesAlreadyPresent = rulesAlreadyPresent;
+            this.rulesFailed = rulesFailed;
+        }
+
+        private String summary() {
+            return "Targeted " + this.targetedHosts + " host name(s); added " + this.rulesAdded + " blacklist rule(s)"
+                    + (this.rulesAlreadyPresent > 0 ? "; " + this.rulesAlreadyPresent + " already present" : "")
+                    + (this.rulesFailed > 0 ? "; " + this.rulesFailed + " failed" : "")
+                    + ".";
+        }
+    }
+
+    private static final class ParkedDomainCandidate {
+        private final DigestURL landingUrl;
+        private final String reason;
+
+        private ParkedDomainCandidate(final DigestURL landingUrl, final String reason) {
+            this.landingUrl = landingUrl;
+            this.reason = reason;
+        }
+
+        private String summary() {
+            return "; parked domain candidate after client-side redirect to "
+                    + this.landingUrl.toNormalform(true) + " (" + this.reason + ")";
+        }
+    }
+
+    private ParkedDomainCandidate inspectZeroContentClientRedirect(final Response response) {
+        if (response == null || response.getContent() == null || response.url() == null) {
+            return null;
+        }
+
+        final String redirectTarget = extractClientRedirectTarget(response.getContent(), response.getCharacterEncoding());
+        if (redirectTarget == null) {
+            return null;
+        }
+
+        final DigestURL landingUrl;
+        try {
+            landingUrl = DigestURL.newURL(response.url(), redirectTarget);
+        } catch (final MalformedURLException e) {
+            return null;
+        }
+        if (!isHttpUrl(landingUrl)) {
+            return null;
+        }
+
+        final String urlReason = parkedDomainUrlReason(landingUrl);
+        if (urlReason != null) {
+            return new ParkedDomainCandidate(landingUrl, urlReason);
+        }
+
+        try {
+            final FetchedLandingPage landingPage = fetchLandingPage(landingUrl);
+            if (landingPage == null || landingPage.source == null || landingPage.source.length == 0) {
+                return landingPage == null || landingPage.redirectReason == null
+                        ? null
+                        : new ParkedDomainCandidate(landingPage.url, landingPage.redirectReason);
+            }
+            if (landingPage.redirectReason != null) {
+                return new ParkedDomainCandidate(landingPage.url, landingPage.redirectReason);
+            }
+            final String crawlerRule = this.crawlerContentRejection.firstMatchingRule(landingPage.source, landingPage.charsetName);
+            if (crawlerRule != null) {
+                return new ParkedDomainCandidate(landingPage.url, "crawler source rule '" + crawlerRule + "'");
+            }
+            final String bodyReason = parkedDomainBodyReason(landingPage.source, landingPage.charsetName);
+            return bodyReason == null ? null : new ParkedDomainCandidate(landingPage.url, bodyReason);
+        } catch (final IOException e) {
+            if (this.log.isFine()) {
+                this.log.fine("Could not inspect zero-content redirect target '" + landingUrl.toNormalform(true) + "': " + e.getMessage());
+            }
+            return null;
+        }
+    }
+
+    private static String extractClientRedirectTarget(final byte[] source, final String charsetName) {
+        final String text = decodeText(source, charsetName);
+        final String metaRefreshTarget = firstMatchingGroup(META_REFRESH_REDIRECT_PATTERN, text);
+        if (metaRefreshTarget != null) {
+            return cleanupRedirectTarget(metaRefreshTarget);
+        }
+        final String replaceTarget = firstMatchingGroup(JS_LOCATION_REPLACE_REDIRECT_PATTERN, text);
+        if (replaceTarget != null) {
+            return cleanupRedirectTarget(replaceTarget);
+        }
+        final String assignTarget = firstMatchingGroup(JS_LOCATION_ASSIGN_REDIRECT_PATTERN, text);
+        return assignTarget == null ? null : cleanupRedirectTarget(assignTarget);
+    }
+
+    private static String firstMatchingGroup(final Pattern pattern, final String text) {
+        final Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            final String group = matcher.group(i);
+            if (group != null && group.trim().length() > 0) {
+                return group;
+            }
+        }
+        return null;
+    }
+
+    private static String cleanupRedirectTarget(final String target) {
+        if (target == null) {
+            return null;
+        }
+        final String cleaned = target
+                .replace("&amp;", "&")
+                .replace("&#38;", "&")
+                .trim();
+        return cleaned.length() == 0 || cleaned.startsWith("javascript:") ? null : cleaned;
+    }
+
+    private static boolean isHttpUrl(final DigestURL url) {
+        if (url == null) {
+            return false;
+        }
+        final String protocol = url.getProtocol();
+        return "http".equalsIgnoreCase(protocol) || "https".equalsIgnoreCase(protocol);
+    }
+
+    private static String parkedDomainUrlReason(final DigestURL landingUrl) {
+        final String host = landingUrl.getHost() == null ? "" : landingUrl.getHost().toLowerCase(Locale.ROOT);
+        final String path = landingUrl.getFile() == null ? "" : landingUrl.getFile().toLowerCase(Locale.ROOT);
+        if ((host.equals("www.afternic.com") || host.equals("afternic.com")) && path.startsWith("/forsale/")) {
+            return "Afternic forsale landing URL";
+        }
+        if (host.equals("forsale.godaddy.com") && path.startsWith("/forsale/")) {
+            return "GoDaddy forsale landing URL";
+        }
+        return null;
+    }
+
+    private static String parkedDomainBodyReason(final byte[] source, final String charsetName) {
+        final String text = decodeText(source, charsetName).replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        for (final String indicator : PARKED_DOMAIN_BODY_INDICATORS) {
+            if (text.contains(indicator)) {
+                return "landing page indicator '" + indicator + "'";
+            }
+        }
+        return null;
+    }
+
+    private static final class FetchedLandingPage {
+        private final DigestURL url;
+        private final byte[] source;
+        private final String charsetName;
+        private final String redirectReason;
+
+        private FetchedLandingPage(final DigestURL url, final byte[] source, final String charsetName, final String redirectReason) {
+            this.url = url;
+            this.source = source;
+            this.charsetName = charsetName;
+            this.redirectReason = redirectReason;
+        }
+    }
+
+    private static FetchedLandingPage fetchLandingPage(final DigestURL landingUrl) throws IOException {
+        return fetchLandingPage(landingUrl, ZERO_CONTENT_REDIRECT_FETCH_MAX_HTTP_REDIRECTS);
+    }
+
+    private static FetchedLandingPage fetchLandingPage(final DigestURL landingUrl, final int redirectsLeft) throws IOException {
+        final URL url = new URL(landingUrl.toNormalform(true));
+        final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setConnectTimeout(ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS);
+        connection.setReadTimeout(ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS);
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestProperty(HeaderFramework.USER_AGENT, ClientIdentification.yacyInternetCrawlerAgent.userAgent());
+        connection.setRequestProperty(HeaderFramework.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        connection.setRequestProperty(HeaderFramework.ACCEPT_LANGUAGE, "en-US,en;q=0.8");
+
+        InputStream stream = null;
+        try {
+            final int status = connection.getResponseCode();
+            if (redirectsLeft > 0 && status >= 300 && status < 400) {
+                final String location = connection.getHeaderField(HeaderFramework.LOCATION);
+                if (location != null && location.trim().length() > 0) {
+                    final DigestURL redirectedLandingUrl = DigestURL.newURL(landingUrl, location);
+                    if (isHttpUrl(redirectedLandingUrl)) {
+                        final String redirectUrlReason = parkedDomainUrlReason(redirectedLandingUrl);
+                        if (redirectUrlReason != null) {
+                            return new FetchedLandingPage(redirectedLandingUrl, new byte[0], null, redirectUrlReason);
+                        }
+                        return fetchLandingPage(redirectedLandingUrl, redirectsLeft - 1);
+                    }
+                }
+            }
+            final String headerReason = parkedDomainHeaderReason(connection.getHeaderFields());
+            if (headerReason != null) {
+                return new FetchedLandingPage(landingUrl, new byte[0], null, headerReason);
+            }
+            try {
+                stream = connection.getInputStream();
+            } catch (final IOException e) {
+                stream = connection.getErrorStream();
+                if (stream == null) {
+                    throw e;
+                }
+            }
+            return new FetchedLandingPage(landingUrl, readLimited(stream, ZERO_CONTENT_REDIRECT_FETCH_MAX_BYTES),
+                    charsetFromContentType(connection.getContentType()), parkedDomainUrlReason(landingUrl));
+        } finally {
+            if (stream != null) {
+                stream.close();
+            }
+            connection.disconnect();
+        }
+    }
+
+    private static byte[] readLimited(final InputStream stream, final int maxBytes) throws IOException {
+        final ByteArrayOutputStream buffer = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
+        final byte[] chunk = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = stream.read(chunk)) >= 0) {
+            final int remaining = maxBytes - total;
+            if (remaining <= 0) {
+                break;
+            }
+            final int toWrite = Math.min(read, remaining);
+            buffer.write(chunk, 0, toWrite);
+            total += toWrite;
+            if (read > remaining) {
+                break;
+            }
+        }
+        return buffer.toByteArray();
+    }
+
+    private static String charsetFromContentType(final String contentType) {
+        if (contentType == null) {
+            return null;
+        }
+        for (final String part : contentType.split(";")) {
+            final String trimmed = part.trim();
+            if (trimmed.toLowerCase(Locale.ROOT).startsWith("charset=")) {
+                return trimmed.substring("charset=".length()).replace("\"", "").trim();
+            }
+        }
+        return null;
+    }
+
+    private static String parkedDomainHeaderReason(final Map<String, List<String>> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return null;
+        }
+        final StringBuilder headerText = new StringBuilder();
+        for (final Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            if (entry.getKey() != null) {
+                headerText.append(entry.getKey()).append(':');
+            }
+            if (entry.getValue() != null) {
+                for (final String value : entry.getValue()) {
+                    headerText.append(' ').append(value);
+                }
+            }
+            headerText.append('\n');
+        }
+        final String normalizedHeaders = headerText.toString().toLowerCase(Locale.ROOT);
+        if (normalizedHeaders.contains("lander_type=parkweb-reseller")) {
+            return "landing page header 'lander_type=parkweb-reseller'";
+        }
+        if (normalizedHeaders.contains("traffic_target=reseller")
+                && normalizedHeaders.contains("x-adblock-key")) {
+            return "landing page reseller parking headers";
+        }
+        return null;
+    }
+
+    private static String decodeText(final byte[] source, final String charsetName) {
+        if (source == null || source.length == 0) {
+            return "";
+        }
+        Charset charset = StandardCharsets.UTF_8;
+        if (charsetName != null && charsetName.trim().length() > 0) {
+            try {
+                charset = Charset.forName(charsetName.trim());
+            } catch (final IllegalCharsetNameException | UnsupportedCharsetException e) {
+                charset = StandardCharsets.UTF_8;
+            }
+        }
+        return new String(source, charset);
+    }
+
+    private void recordYouTubeParserAction(final Response response, final Document document) {
+        if (response == null || document == null || document.dc_source() == null) {
+            return;
+        }
+        final String canonicalUrl = htmlParser.canonicalYouTubeVideoUrl(response.url());
+        if (canonicalUrl == null) {
+            return;
+        }
+        final List<String> actions = new ArrayList<>();
+        if (!response.url().toNormalform(true).equals(canonicalUrl)
+                && document.dc_source().toNormalform(true).equals(canonicalUrl)) {
+            actions.add("canonicalized URL");
+        }
+        final String title = document.dc_title();
+        if (title != null && title.endsWith(" - YouTube") && !"- YouTube".equals(title)) {
+            actions.add("enriched title");
+        }
+        final String author = document.dc_creator();
+        if (author != null && author.length() > 0) {
+            actions.add("captured author");
+        }
+        if (document.dc_subject() == null || document.dc_subject().isEmpty()) {
+            actions.add("dropped generic keywords when present");
+        }
+        if (!actions.isEmpty()) {
+            recordCrawlerRuleAction(document.dc_source(), "YouTube metadata normalized: " + String.join(", ", actions));
         }
     }
 

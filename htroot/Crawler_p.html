@@ -244,6 +244,43 @@ window.setInterval("setTableSize()", 1000);
 
 #(info-queue)#::<div class="alert alert-warning">#[message]#</div>#(/info-queue)#
 
+#(crawlerRuleActions_cleanupResult)#::<div class="alert #(success)#alert-danger::alert-success#(/success)#">#[message]#</div>#(/crawlerRuleActions_cleanupResult)#
+
+<fieldset id="crawlerRuleActionsFieldset" style="clear:both;">
+    <legend>Recent Crawler Rule Actions (<span id="crawlerRuleActionsCount">#[crawlerRuleActions_count]#</span>)</legend>
+    <input type="hidden" id="crawlerTransactionToken" value="#[transactionToken]#" />
+    <input type="hidden" id="crawlerDefaultBlacklist" value="#[crawlerRuleActions_blacklist]#" />
+    <table border="0" class="watchCrawler" id="crawlerRuleActions">
+        <thead>
+            <tr class="TableHeader">
+                <th width="120">Time</th>
+                <th>URL</th>
+                <th>Action</th>
+                <th width="210">Domain Cleanup</th>
+            </tr>
+        </thead>
+        <tbody id="crawlerRuleActionsBody">
+            #(crawlerRuleActions)#
+            <tr class="TableCellLight"><td colspan="4">No recent crawler rule actions.</td></tr>::
+            #{list}#
+            <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
+                <td class="crawlerRuleActionTime" data-time="#[time]#">#[time]#</td>
+                <td><a href="#[url]#" target="_blank">#[url]#</a></td>
+                <td>#[action]#</td>
+                <td>#(cleanup)#::<form method="post" action="Crawler_p.html" onsubmit="return confirm('Remove indexed content for #[domain]# and subdomains, then add root/subdomain rules to url.domain_for_sale.black?');" style="margin:0;">
+                    <input type="hidden" name="transactionToken" value="#[transactionToken]#" />
+                    <input type="hidden" name="parkedDomainCleanup" value="true" />
+                    <input type="hidden" name="domain" value="#[domain]#" />
+                    <input type="hidden" name="blacklistname" value="#[blacklist]#" />
+                    <input type="submit" class="btn btn-danger btn-xs" value="Purge + blacklist" title="Remove indexed records for #[domain]# and all subdomains, then add future-crawl blocks to url.domain_for_sale.black." />
+                </form>#(/cleanup)#</td>
+            </tr>
+            #{/list}#
+            #(/crawlerRuleActions)#
+        </tbody>
+    </table>
+</fieldset>
+
 <!-- crawl profile list -->
 #(crawlProfilesShow)#::
 <fieldset>
