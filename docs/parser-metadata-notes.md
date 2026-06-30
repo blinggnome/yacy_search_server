@@ -29,3 +29,9 @@ When a recrawl gets a definitive bad HTTP response (`4xx` or `5xx`), YaCy now re
 When a recrawl successfully fetches a page but the parsed document declares `noindex`, the old indexed document is also removed before the failure is recorded. This covers parser-detected authentication handoff pages such as SAML request forms.
 
 Crawl-profile scope filters are intentionally not treated as proof that an existing document is bad. For example, a media-excluding crawl or a temporary URL/content regex should not delete a valid record that was accepted by an earlier crawl.
+
+## Future metadata enrichment
+
+The parser now has fallbacks for pages with missing, malformed, or low-value titles and descriptions, and generated titles are capped to 180 characters. Those improvements apply when a URL is crawled or recrawled; they do not automatically rewrite older records already stored in the index.
+
+Future work should add a maintenance plan to find existing records with missing, generic, malformed, or overlong titles/descriptions, recrawl or reparse them with the current metadata rules, and update the stored record only when the new metadata is clearly richer. The same pass should preserve good existing metadata, remove records that recrawl as definitive errors, and report how many records were enriched, unchanged, rejected, or deleted.
