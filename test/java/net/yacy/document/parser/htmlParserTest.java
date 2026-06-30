@@ -298,6 +298,38 @@ public class htmlParserTest {
     }
 
     /**
+     * Oversized generated titles should stay concise enough for index display
+     * and downstream metadata handling.
+     *
+     * @throws Exception when an unexpected error occurred
+     */
+    @Test
+    public void testOversizedTitleIsCapped() throws Exception {
+        final AnchorURL url = new AnchorURL("http://localhost/");
+        final String charset = StandardCharsets.UTF_8.name();
+        final StringBuilder title = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            title.append("This generated title contains far too much repeated page content ");
+        }
+        final String testhtml = "<html><head><title>" + title + "</title></head>"
+                + "<body><p>Visible article text for this parser regression.</p></body></html>";
+
+        final ContentScraper scraper = parseToScraper(
+                url,
+                charset,
+                TagValency.EVAL,
+                new HashSet<String>(),
+                new VocabularyScraper(),
+                0,
+                testhtml,
+                10,
+                10);
+
+        assertFalse(scraper.getTitles().isEmpty());
+        assertTrue(scraper.getTitles().get(0).length() <= 180);
+    }
+
+    /**
      * JavaScript application shells may expose no useful title, metadata or
      * headings in the initial HTML. In that case, keep a readable URL slug title
      * instead of returning an empty title.

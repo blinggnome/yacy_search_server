@@ -74,8 +74,8 @@ public class ContentScraper extends AbstractScraper implements Scraper {
 
     private final static int MAX_TAGSIZE = 1024 * 1024;
     public static final int MAX_DOCSIZE = 40 * 1024 * 1024;
-    private final static int MAX_TITLE_LENGTH = 1024;
-    private final static int FALLBACK_TITLE_LENGTH = 240;
+    private final static int MAX_TITLE_LENGTH = 180;
+    private final static int FALLBACK_TITLE_LENGTH = 180;
 
     private final char degree = '\u00B0';
     private final char[] minuteCharsHTML = "&#039;".toCharArray();
@@ -1107,14 +1107,14 @@ public class ContentScraper extends AbstractScraper implements Scraper {
         if (s == null) s = this.metas.get("og:title");
         if (s == null) s = this.metas.get("twitter:title");
         if (s != null && s.length() > 0) {
-            this.titles.add(s);
+            this.titles.add(cleanTitle(s));
         }
 
         if (this.titles.size() == 0) {
             // take any headline
             for (int i = 0; i < this.headlines.length; i++) {
                 if (!this.headlines[i].isEmpty()) {
-                    this.titles.add(this.headlines[i].get(0));
+                    this.titles.add(cleanTitle(this.headlines[i].get(0)));
                     break;
                 }
             }
@@ -1185,7 +1185,7 @@ public class ContentScraper extends AbstractScraper implements Scraper {
             title.append(Character.toUpperCase(part.charAt(0)));
             if (part.length() > 1) title.append(part.substring(1));
         }
-        return cleanLine(title.toString());
+        return shortenTitle(cleanLine(title.toString()));
     }
 
     public String[] getHeadlines(final int i) {
