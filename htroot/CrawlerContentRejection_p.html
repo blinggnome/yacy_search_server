@@ -10,9 +10,10 @@
 
     <h2>Crawler Content Rejection</h2>
     <p>
-      Plain text rules entered here are matched case-insensitively against the parsed document title,
-      description and body text during crawling. Matching documents are rejected before indexing, and
-      any existing indexed record for the URL is removed.
+      Plain text rules entered here are matched case-insensitively during crawling.
+      Soft rules reject the matching page and remove an existing indexed record for that URL.
+      Poison pills are stronger: a match rejects the page, adds the host to <code>url.poison_pill.black</code>,
+      and removes indexed records for that host.
     </p>
 
     #(status)#
@@ -21,24 +22,24 @@
     #(/status)#
 
     <fieldset>
-      <legend>Add rule</legend>
+      <legend>Add soft rule</legend>
       <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
         <input type="text" name="newRule" size="80" />
-        <input type="submit" name="addRule" class="btn btn-primary" value="Add text rule" />
+        <input type="submit" name="addRule" class="btn btn-primary" value="Add soft rule" />
       </form>
     </fieldset>
 
     <fieldset>
-      <legend>Current rules</legend>
-      <p>There are #[count]# crawler content rejection rules.</p>
+      <legend>Soft rules</legend>
+      <p>There are #[count]# soft crawler content rejection rules.</p>
       #(hasRules)#
-      <p>No crawler content rejection rules are currently configured.</p>
+      <p>No soft crawler content rejection rules are currently configured.</p>
       ::
       <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
         <table border="0">
           <tr class="TableHeader">
             <td></td>
-            <td><strong>Text Rule</strong></td>
+            <td><strong>Soft Rule</strong></td>
           </tr>
           #{ruleList}#
           <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
@@ -48,18 +49,64 @@
           #{/ruleList}#
         </table>
         <br />
-        <input type="submit" name="deleteRules" class="btn btn-danger" value="Delete selected rules" />
+        <input type="submit" name="deleteRules" class="btn btn-danger" value="Delete selected soft rules" />
       </form>
       #(/hasRules)#
     </fieldset>
 
     <fieldset>
-      <legend>Bulk edit</legend>
+      <legend>Bulk edit soft rules</legend>
       <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
         <p>One plain text rule per line. Blank lines and lines beginning with <code>#</code> are ignored.</p>
         <textarea name="rulesText" cols="100" rows="16">#[rulesText]#</textarea>
         <br />
-        <input type="submit" name="saveRules" class="btn btn-primary" value="Save rules" />
+        <input type="submit" name="saveRules" class="btn btn-primary" value="Save soft rules" />
+      </form>
+    </fieldset>
+
+    <fieldset>
+      <legend>Add poison pill</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <input type="text" name="newPoisonPill" size="80" />
+        <input type="submit" name="addPoisonPill" class="btn btn-danger" value="Add poison pill" />
+      </form>
+    </fieldset>
+
+    <fieldset>
+      <legend>Poison pills</legend>
+      <p>There are #[poisonPillCount]# poison pill crawler content rejection rules.</p>
+      <p>
+        A poison pill match adds the matching host to <code>url.poison_pill.black</code> and removes indexed records for that host.
+      </p>
+      #(hasPoisonPills)#
+      <p>No poison pill crawler content rejection rules are currently configured.</p>
+      ::
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <table border="0">
+          <tr class="TableHeader">
+            <td></td>
+            <td><strong>Poison Pill</strong></td>
+          </tr>
+          #{poisonPillList}#
+          <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
+            <td><input type="checkbox" name="selectedPoisonPill.#[count]#" id="selectedPoisonPill.#[count]#" value="#[rule]#" /></td>
+            <td><label for="selectedPoisonPill.#[count]#">#[rule]#</label></td>
+          </tr>
+          #{/poisonPillList}#
+        </table>
+        <br />
+        <input type="submit" name="deletePoisonPills" class="btn btn-danger" value="Delete selected poison pills" />
+      </form>
+      #(/hasPoisonPills)#
+    </fieldset>
+
+    <fieldset>
+      <legend>Bulk edit poison pills</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <p>One plain text poison pill per line. Blank lines and lines beginning with <code>#</code> are ignored.</p>
+        <textarea name="poisonPillsText" cols="100" rows="10">#[poisonPillsText]#</textarea>
+        <br />
+        <input type="submit" name="savePoisonPills" class="btn btn-danger" value="Save poison pills" />
       </form>
     </fieldset>
 

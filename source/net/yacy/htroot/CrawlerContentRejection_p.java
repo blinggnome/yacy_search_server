@@ -31,17 +31,32 @@ public class CrawlerContentRejection_p {
                     rejectionRules.addRule(post.get("newRule", ""));
                     prop.put("status", "1");
                     prop.put("status_success", "1");
-                    prop.putHTML("status_message", "Crawler content rejection rule added.");
+                    prop.putHTML("status_message", "Soft crawler content rejection rule added.");
+                } else if (post.containsKey("addPoisonPill")) {
+                    rejectionRules.addPoisonPill(post.get("newPoisonPill", ""));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Poison pill crawler content rejection rule added.");
                 } else if (post.containsKey("deleteRules")) {
                     rejectionRules.deleteRules(Arrays.asList(post.getAll("selectedRule.*")));
                     prop.put("status", "1");
                     prop.put("status_success", "1");
-                    prop.putHTML("status_message", "Selected crawler content rejection rules deleted.");
+                    prop.putHTML("status_message", "Selected soft crawler content rejection rules deleted.");
+                } else if (post.containsKey("deletePoisonPills")) {
+                    rejectionRules.deletePoisonPills(Arrays.asList(post.getAll("selectedPoisonPill.*")));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Selected poison pill crawler content rejection rules deleted.");
                 } else if (post.containsKey("saveRules")) {
                     rejectionRules.setRules(Arrays.asList(post.get("rulesText", "").split("\\r?\\n")));
                     prop.put("status", "1");
                     prop.put("status_success", "1");
-                    prop.putHTML("status_message", "Crawler content rejection rules saved.");
+                    prop.putHTML("status_message", "Soft crawler content rejection rules saved.");
+                } else if (post.containsKey("savePoisonPills")) {
+                    rejectionRules.setPoisonPills(Arrays.asList(post.get("poisonPillsText", "").split("\\r?\\n")));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Poison pill crawler content rejection rules saved.");
                 }
             } catch (final IOException e) {
                 prop.put("status", "1");
@@ -64,6 +79,21 @@ public class CrawlerContentRejection_p {
         }
         prop.put("hasRules_ruleList", rules.size());
         prop.put("rulesText", CharacterCoding.unicode2html(rulesText.toString(), true));
+
+        final List<String> poisonPills = rejectionRules.getPoisonPills();
+        prop.putNum("poisonPillCount", poisonPills.size());
+        prop.put("hasPoisonPills", poisonPills.isEmpty() ? "0" : "1");
+
+        final StringBuilder poisonPillsText = new StringBuilder();
+        for (int i = 0; i < poisonPills.size(); i++) {
+            final String rule = poisonPills.get(i);
+            prop.put("hasPoisonPills_poisonPillList_" + i + "_count", i);
+            prop.put("hasPoisonPills_poisonPillList_" + i + "_rule", CharacterCoding.unicode2html(rule, true));
+            prop.put("hasPoisonPills_poisonPillList_" + i + "_dark", (i & 1) == 0 ? "1" : "0");
+            poisonPillsText.append(rule).append('\n');
+        }
+        prop.put("hasPoisonPills_poisonPillList", poisonPills.size());
+        prop.put("poisonPillsText", CharacterCoding.unicode2html(poisonPillsText.toString(), true));
 
         return prop;
     }
