@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -798,5 +799,28 @@ public class htmlParserTest {
         assertFalse(txt.contains("@click"));
         assertFalse(txt.contains("lightboxPrev"));
         assertFalse(txt.contains("imgModalItems.length"));
+    }
+
+    @Test
+    public void testYouTubeAttributedDescriptionExtraction() throws Exception {
+        final String rawSource = "{\"attributedDescription\":{\"content\":\"Line one\\nLine \\\"two\\\"\"}}";
+        assertEquals("Line one\nLine \"two\"", invokeYouTubeAttributedDescription(rawSource));
+    }
+
+    @Test
+    public void testYouTubeAttributedDescriptionExtractionLargeSourceWithoutMatch() throws Exception {
+        final StringBuilder rawSource = new StringBuilder("\"attributedDescription\":{\"runs\":[");
+        for (int i = 0; i < 25000; i++) {
+            rawSource.append("{\"text\":\"not content ").append(i).append("\"},");
+        }
+        rawSource.append("]}");
+        assertEquals("", invokeYouTubeAttributedDescription(rawSource.toString()));
+    }
+
+    private static String invokeYouTubeAttributedDescription(final String rawSource) throws Exception {
+        final Class<?> metadataClass = Class.forName("net.yacy.document.parser.htmlParser$YouTubeOEmbedMetadata");
+        final Method method = metadataClass.getDeclaredMethod("attributedDescription", String.class);
+        method.setAccessible(true);
+        return (String) method.invoke(null, rawSource);
     }
 }

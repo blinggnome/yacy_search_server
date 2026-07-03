@@ -313,7 +313,9 @@ public class htmlParser extends AbstractParser implements Parser {
         private static final String EMBED_YOUTUBE_TITLE = "YouTube";
         private static final String GENERIC_YOUTUBE_DESCRIPTION = "Enjoy the videos and music you love, upload original content, and share it all with friends, family, and the world on YouTube.";
         private static final String[] GENERIC_YOUTUBE_KEYWORDS = {"video", "sharing", "camera", "phone", "video", "phone", "free", "upload"};
-        private static final Pattern ATTRIBUTED_DESCRIPTION = Pattern.compile("\"attributedDescription\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+        private static final String ATTRIBUTED_DESCRIPTION_MARKER = "\"attributedDescription\"";
+        private static final String ATTRIBUTED_DESCRIPTION_CONTENT_MARKER = "\"content\"";
+        private static final int ATTRIBUTED_DESCRIPTION_SCAN_LIMIT = 20000;
 
         private final String title;
         private final String authorName;
@@ -382,13 +384,49 @@ public class htmlParser extends AbstractParser implements Parser {
 
         static String attributedDescription(final String rawSource) {
             if (rawSource == null || rawSource.length() == 0) return "";
-            final Matcher matcher = ATTRIBUTED_DESCRIPTION.matcher(rawSource);
-            if (!matcher.find()) return "";
-            try {
-                return new JSONObject("{\"value\":\"" + matcher.group(1) + "\"}").optString("value", "").trim();
-            } catch (final JSONException e) {
-                return "";
+            int markerOffset = rawSource.indexOf(ATTRIBUTED_DESCRIPTION_MARKER);
+            while (markerOffset >= 0) {
+                final int objectOffset = rawSource.indexOf('{', markerOffset + ATTRIBUTED_DESCRIPTION_MARKER.length());
+                if (objectOffset < 0) return "";
+                final int scanLimit = Math.min(rawSource.length(), objectOffset + ATTRIBUTED_DESCRIPTION_SCAN_LIMIT);
+                final int contentOffset = rawSource.indexOf(ATTRIBUTED_DESCRIPTION_CONTENT_MARKER, objectOffset);
+                if (contentOffset >= 0 && contentOffset < scanLimit) {
+                    final int colonOffset = rawSource.indexOf(':', contentOffset + ATTRIBUTED_DESCRIPTION_CONTENT_MARKER.length());
+                    if (colonOffset >= 0 && colonOffset < scanLimit) {
+                        final String description = jsonStringAfterColon(rawSource, colonOffset);
+                        if (description != null && description.length() > 0) return description;
+                    }
+                }
+                markerOffset = rawSource.indexOf(ATTRIBUTED_DESCRIPTION_MARKER, markerOffset + ATTRIBUTED_DESCRIPTION_MARKER.length());
             }
+            return "";
+        }
+
+        private static String jsonStringAfterColon(final String text, final int colonOffset) {
+            int offset = colonOffset + 1;
+            while (offset < text.length() && Character.isWhitespace(text.charAt(offset))) offset++;
+            if (offset >= text.length() || text.charAt(offset) != '"') return null;
+
+            final StringBuilder escaped = new StringBuilder();
+            boolean escaping = false;
+            for (offset++; offset < text.length(); offset++) {
+                final char c = text.charAt(offset);
+                if (escaping) {
+                    escaped.append('\\').append(c);
+                    escaping = false;
+                } else if (c == '\\') {
+                    escaping = true;
+                } else if (c == '"') {
+                    try {
+                        return new JSONObject("{\"value\":\"" + escaped + "\"}").optString("value", "").trim();
+                    } catch (final JSONException e) {
+                        return "";
+                    }
+                } else {
+                    escaped.append(c);
+                }
+            }
+            return null;
         }
 
         private static String canonicalVideoUrl(final DigestURL location) {
