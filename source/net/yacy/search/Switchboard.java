@@ -342,6 +342,10 @@ public final class Switchboard extends serverSwitch {
     public static final String DOMAIN_ABANDONED_BLACKLIST = "url.domain_abandoned.black";
     public static final String POISON_PILL_BLACKLIST = "url.poison_pill.black";
     private static final int CRAWLER_RULE_ACTION_LIMIT = 50;
+    private static final int CRAWLER_RULE_ACTION_LOG_DISPLAY_LIMIT = 200;
+    private static final int CRAWLER_RULE_ACTION_LOG_FILE_LIMIT = 10000;
+    private static final int CRAWLER_RULE_ACTION_TEXT_LIMIT = 1200;
+    private static final String CRAWLER_RULE_ACTION_LOG = "DATA/LOG/crawler-rule-actions.log";
     private static final int ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS = 5000;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_BYTES = 256 * 1024;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_HTTP_REDIRECTS = 3;
@@ -1834,33 +1838,185 @@ public final class Switchboard extends serverSwitch {
         public final String url;
         public final String action;
         public final String cleanupDomain;
+        public final String cleanupBlacklist;
+        public final boolean manualCleanupAvailable;
 
         private CrawlerRuleAction(final long timestamp, final String url, final String action, final String cleanupDomain) {
+            this(timestamp, url, action, cleanupDomain, "", false);
+        }
+
+        private CrawlerRuleAction(final long timestamp, final String url, final String action, final String cleanupDomain,
+                final String cleanupBlacklist, final boolean manualCleanupAvailable) {
             this.timestamp = timestamp;
             this.url = url;
             this.action = action;
             this.cleanupDomain = cleanupDomain;
+            this.cleanupBlacklist = cleanupBlacklist == null ? "" : cleanupBlacklist;
+            this.manualCleanupAvailable = manualCleanupAvailable;
         }
     }
 
     public void recordCrawlerRuleAction(final DigestURL url, final String action) {
-        if (url == null || action == null || action.length() == 0) {
+        recordCrawlerRuleAction(url, action, action);
+    }
+
+    private void recordCrawlerRuleActionLiveOnly(final DigestURL url, final String action) {
+        recordCrawlerRuleAction(url, action, null);
+    }
+
+    private void recordCrawlerRuleAction(final DigestURL url, final String displayAction, final String auditAction) {
+        recordCrawlerRuleAction(url, displayAction, auditAction, null);
+    }
+
+    private void recordCrawlerRuleAction(final DigestURL url, final String displayAction, final String auditAction,
+            final String cleanupDomain) {
+        recordCrawlerRuleAction(url, displayAction, auditAction, cleanupDomain, "", false);
+    }
+
+    private void recordCrawlerRuleAction(final DigestURL url, final String displayAction, final String auditAction,
+            final String cleanupDomain, final String cleanupBlacklist) {
+        recordCrawlerRuleAction(url, displayAction, auditAction, cleanupDomain, cleanupBlacklist, false);
+    }
+
+    private void recordCrawlerRuleAction(final DigestURL url, final String displayAction, final String auditAction,
+            final String cleanupDomain, final String cleanupBlacklist, final boolean manualCleanupAvailable) {
+        if (url == null || displayAction == null || displayAction.length() == 0) {
             return;
         }
+        final boolean audit = auditAction != null && auditAction.length() > 0;
+        final String safeAuditAction = audit ? auditAction : displayAction;
+        final CrawlerRuleAction crawlerRuleAction = new CrawlerRuleAction(
+                System.currentTimeMillis(),
+                url.toNormalform(true),
+                limitCrawlerRuleAction(displayAction),
+                normalizedCleanupDomain(cleanupDomain, url, safeAuditAction),
+                crawlerRuleCleanupBlacklist(cleanupBlacklist),
+                manualCleanupAvailable);
         synchronized (this.crawlerRuleActions) {
-            this.crawlerRuleActions.addFirst(new CrawlerRuleAction(
-                    System.currentTimeMillis(),
-                    url.toNormalform(true),
-                    action.length() > 300 ? action.substring(0, 300) : action,
-                    crawlerRuleCleanupDomain(url, action)));
+            this.crawlerRuleActions.addFirst(crawlerRuleAction);
             while (this.crawlerRuleActions.size() > CRAWLER_RULE_ACTION_LIMIT) {
                 this.crawlerRuleActions.removeLast();
             }
         }
+        if (audit) {
+            appendCrawlerRuleActionLog(new CrawlerRuleAction(
+                    crawlerRuleAction.timestamp,
+                    crawlerRuleAction.url,
+                    limitCrawlerRuleAction(safeAuditAction),
+                    crawlerRuleAction.cleanupDomain,
+                    crawlerRuleAction.cleanupBlacklist,
+                    crawlerRuleAction.manualCleanupAvailable));
+        }
+    }
+
+    private static String limitCrawlerRuleAction(final String action) {
+        return action.length() > CRAWLER_RULE_ACTION_TEXT_LIMIT
+                ? action.substring(0, CRAWLER_RULE_ACTION_TEXT_LIMIT)
+                : action;
+    }
+
+    private void appendCrawlerRuleActionLog(final CrawlerRuleAction action) {
+        final File logFile = crawlerRuleActionLogFile();
+        final File parent = logFile.getParentFile();
+        if (parent != null) parent.mkdirs();
+        try (PrintWriter writer = new PrintWriter(new FileOutputStream(logFile, true))) {
+            writer.print(action.timestamp);
+            writer.print('\t');
+            writer.print(escapeCrawlerRuleLogField(action.url));
+            writer.print('\t');
+            writer.print(escapeCrawlerRuleLogField(action.cleanupDomain));
+            writer.print('\t');
+            writer.print(escapeCrawlerRuleLogField(action.action));
+            writer.print('\t');
+            writer.print(escapeCrawlerRuleLogField(action.cleanupBlacklist));
+            writer.print('\t');
+            writer.println(action.manualCleanupAvailable ? "true" : "false");
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not append crawler rule action log", e);
+            return;
+        }
+        trimCrawlerRuleActionLog(logFile);
+    }
+
+    private static void trimCrawlerRuleActionLog(final File logFile) {
+        final ArrayDeque<String> recent = new ArrayDeque<>();
+        int lineCount = 0;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                recent.addLast(line);
+                lineCount++;
+                while (recent.size() > CRAWLER_RULE_ACTION_LOG_FILE_LIMIT) {
+                    recent.removeFirst();
+                }
+            }
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not trim crawler rule action log", e);
+            return;
+        }
+        if (lineCount <= CRAWLER_RULE_ACTION_LOG_FILE_LIMIT) {
+            return;
+        }
+        try (PrintWriter writer = new PrintWriter(new FileOutputStream(logFile, false))) {
+            while (!recent.isEmpty()) {
+                writer.println(recent.removeFirst());
+            }
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not rewrite trimmed crawler rule action log", e);
+        }
+    }
+
+    private File crawlerRuleActionLogFile() {
+        return new File(this.dataPath, CRAWLER_RULE_ACTION_LOG);
+    }
+
+    private static String escapeCrawlerRuleLogField(final String value) {
+        return value == null ? "" : value.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ');
     }
 
     private static String crawlerRuleCleanupDomain(final DigestURL url, final String action) {
         if (url == null || action == null || action.indexOf("parked domain candidate") < 0) {
+            return "";
+        }
+        return topPrivateDomain(url);
+    }
+
+    private static String normalizedCleanupDomain(final String cleanupDomain, final DigestURL url, final String action) {
+        final String explicitDomain = normalizedCleanupDomain(cleanupDomain);
+        return explicitDomain.length() > 0 ? explicitDomain : crawlerRuleCleanupDomain(url, action);
+    }
+
+    private static String crawlerRuleCleanupBlacklist(final String cleanupBlacklist) {
+        if (DOMAIN_FOR_SALE_BLACKLIST.equals(cleanupBlacklist)) {
+            return DOMAIN_FOR_SALE_BLACKLIST;
+        }
+        if (DOMAIN_ABANDONED_BLACKLIST.equals(cleanupBlacklist)) {
+            return DOMAIN_ABANDONED_BLACKLIST;
+        }
+        if (POISON_PILL_BLACKLIST.equals(cleanupBlacklist)) {
+            return POISON_PILL_BLACKLIST;
+        }
+        return "";
+    }
+
+    private static String normalizedCleanupDomain(final String cleanupDomain) {
+        if (cleanupDomain == null) {
+            return "";
+        }
+        final String cleanedDomain = cleanupDomain.trim().toLowerCase(Locale.ROOT);
+        if (cleanedDomain.length() == 0) {
+            return "";
+        }
+        try {
+            final InternetDomainName domainName = InternetDomainName.from(cleanedDomain);
+            return domainName.toString();
+        } catch (final IllegalArgumentException e) {
+            return "";
+        }
+    }
+
+    private static String topPrivateDomain(final DigestURL url) {
+        if (url == null) {
             return "";
         }
         final String host = url.getHost();
@@ -1882,6 +2038,70 @@ public final class Switchboard extends serverSwitch {
         synchronized (this.crawlerRuleActions) {
             return new ArrayList<>(this.crawlerRuleActions);
         }
+    }
+
+    public List<CrawlerRuleAction> crawlerRuleActionLog() {
+        final File logFile = crawlerRuleActionLogFile();
+        if (!logFile.exists()) return new ArrayList<>();
+        final ArrayDeque<CrawlerRuleAction> recent = new ArrayDeque<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                final String[] fields = line.split("\t", 6);
+                if (fields.length < 4) continue;
+                try {
+                    final String action = fields[3];
+                    final String cleanupBlacklist = fields.length > 4 ? crawlerRuleCleanupBlacklist(fields[4])
+                            : crawlerRuleCleanupBlacklistFromAction(action);
+                    final String cleanupDomain = normalizedCleanupDomain(fields[2]).length() > 0
+                            ? normalizedCleanupDomain(fields[2])
+                            : crawlerRuleCleanupDomainFromAction(action, cleanupBlacklist);
+                    final boolean manualCleanupAvailable = fields.length > 5 && "true".equalsIgnoreCase(fields[5]);
+                    recent.addLast(new CrawlerRuleAction(Long.parseLong(fields[0]), fields[1], action,
+                            cleanupDomain, cleanupBlacklist, manualCleanupAvailable));
+                    while (recent.size() > CRAWLER_RULE_ACTION_LOG_DISPLAY_LIMIT) recent.removeFirst();
+                } catch (final NumberFormatException e) {
+                }
+            }
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not read crawler rule action log", e);
+        }
+        final List<CrawlerRuleAction> actions = new ArrayList<>();
+        while (!recent.isEmpty()) actions.add(recent.removeLast());
+        return actions;
+    }
+
+    private static String crawlerRuleCleanupBlacklistFromAction(final String action) {
+        if (action == null) {
+            return "";
+        }
+        if (action.indexOf(DOMAIN_FOR_SALE_BLACKLIST) >= 0) {
+            return DOMAIN_FOR_SALE_BLACKLIST;
+        }
+        if (action.indexOf(DOMAIN_ABANDONED_BLACKLIST) >= 0) {
+            return DOMAIN_ABANDONED_BLACKLIST;
+        }
+        if (action.indexOf(POISON_PILL_BLACKLIST) >= 0) {
+            return POISON_PILL_BLACKLIST;
+        }
+        return "";
+    }
+
+    private static String crawlerRuleCleanupDomainFromAction(final String action, final String cleanupBlacklist) {
+        if (action == null || cleanupBlacklist == null || cleanupBlacklist.length() == 0) {
+            return "";
+        }
+        final String prefix = DOMAIN_FOR_SALE_BLACKLIST.equals(cleanupBlacklist) ? "Domain '" : "Host '";
+        final int start = action.indexOf(prefix);
+        if (start < 0) {
+            return "";
+        }
+        final int valueStart = start + prefix.length();
+        final int valueEnd = action.indexOf('\'', valueStart);
+        if (valueEnd <= valueStart) {
+            return "";
+        }
+        return normalizedCleanupDomain(action.substring(valueStart, valueEnd));
     }
 
     public boolean isP2PMode() {
@@ -3398,8 +3618,12 @@ public final class Switchboard extends serverSwitch {
                 final String info = "Not Condensed Resource '" + urls + "': rejected zero-content document" + parkedDomainSummary;
                 if (this.log.isInfo()) this.log.info(info);
                 final int removed = removeRejectedIndexDocuments(document.dc_source(), "zero-content document");
-                recordCrawlerRuleAction(document.dc_source(), crawlerParkedDomainAction(document.dc_source(), parkedDomainCandidate,
-                        "Rejected zero-content document" + parkedDomainSummary + removalSummary(removed)));
+                final String action = crawlerParkedDomainAction(document.dc_source(), parkedDomainCandidate,
+                        "Rejected zero-content document" + parkedDomainSummary + removalSummary(removed));
+                recordCrawlerRuleAction(document.dc_source(), action, action,
+                        parkedDomainCleanupDomain(document.dc_source(), parkedDomainCandidate),
+                        crawlerRuleCleanupBlacklistFromAction(action),
+                        parkedDomainManualCleanupAvailable(parkedDomainCandidate, action));
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
                 continue docloop;
             }
@@ -3566,8 +3790,10 @@ public final class Switchboard extends serverSwitch {
             final ParkedDomainCandidate parkedDomainCandidate = inspectZeroContentClientRedirect(queueEntry);
             final String parkedDomainSummary = parkedDomainCandidate == null ? "" : parkedDomainCandidate.summary();
             final int removed = removeRejectedIndexDocuments(url, "zero-content document, process case=" + processCase);
-            recordCrawlerRuleAction(url, crawlerParkedDomainAction(url, parkedDomainCandidate,
-                    "Rejected zero-content document at index storage" + parkedDomainSummary + removalSummary(removed)));
+            final String action = crawlerParkedDomainAction(url, parkedDomainCandidate,
+                    "Rejected zero-content document at index storage" + parkedDomainSummary + removalSummary(removed));
+            recordCrawlerRuleAction(url, action, action, parkedDomainCleanupDomain(url, parkedDomainCandidate),
+                    crawlerRuleCleanupBlacklistFromAction(action), parkedDomainManualCleanupAvailable(parkedDomainCandidate, action));
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected zero-content document" + parkedDomainSummary + ", process case=" + processCase, -1);
             return;
@@ -3617,7 +3843,7 @@ public final class Switchboard extends serverSwitch {
         if (existingMetadataIsBetter(url, document)) {
             this.log.info("Not Indexed Resource '" + queueEntry.url().toNormalform(false, true)
                     + "': existing metadata is richer than newly parsed metadata.");
-            recordCrawlerRuleAction(url, "Skipped indexing because existing metadata is richer");
+            recordCrawlerRuleActionLiveOnly(url, "Skipped indexing because existing metadata is richer");
             return;
         }
 
@@ -3719,48 +3945,72 @@ public final class Switchboard extends serverSwitch {
     }
 
     private String crawlerSourceRejection(final Response response) {
-        final String poisonPillRule = this.crawlerContentRejection.firstMatchingPoisonPill(
+        final CrawlerContentRejection.RuleMatch poisonPillMatch = this.crawlerContentRejection.firstPoisonPillMatch(
                 response.getContent(),
                 response.getCharacterEncoding());
-        if (poisonPillRule != null) {
-            final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(response.url(), poisonPillRule, "crawler source poison pill");
-            recordCrawlerRuleAction(response.url(), "Poison pill '" + poisonPillRule + "' matched before parsing. "
-                    + cleanup.summary());
-            return "Not Parsed Resource '" + response.url().toNormalform(true)
-                    + "': rejected by crawler source poison pill '" + poisonPillRule + "'";
+        if (poisonPillMatch != null) {
+            if (isCrawlerPoisonPillWhitelisted(response.url())) {
+                recordCrawlerRuleAction(response.url(), "Poison pill skipped for whitelisted host before parsing: "
+                        + poisonPillMatch.shortSummary(), "Poison pill skipped for whitelisted host before parsing: "
+                        + poisonPillMatch.summary());
+            } else {
+                final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(response.url(), poisonPillMatch.rule, "crawler source poison pill");
+                recordCrawlerRuleAction(response.url(), "Poison pill matched before parsing: "
+                        + poisonPillMatch.shortSummary() + ". " + cleanup.summary(), "Poison pill matched before parsing: "
+                        + poisonPillMatch.summary() + ". " + cleanup.summary(), cleanup.host, POISON_PILL_BLACKLIST);
+                return "Not Parsed Resource '" + response.url().toNormalform(true)
+                        + "': rejected by crawler source poison pill '" + poisonPillMatch.rule + "'";
+            }
         }
 
-        final String crawlerSourceRejectionRule = this.crawlerContentRejection.firstMatchingRule(
+        final CrawlerContentRejection.RuleMatch crawlerSourceRejectionMatch = this.crawlerContentRejection.firstRuleMatch(
                 response.getContent(),
                 response.getCharacterEncoding());
+        final String crawlerSourceRejectionRule = crawlerSourceRejectionMatch == null ? null : crawlerSourceRejectionMatch.rule;
         if (crawlerSourceRejectionRule == null) {
             return null;
         }
 
         final int removed = removeRejectedIndexDocuments(response.url(), "crawler source rule '" + crawlerSourceRejectionRule + "'");
-        recordCrawlerRuleAction(response.url(), "Rejected before parsing by crawler source rule '" + crawlerSourceRejectionRule + "'" + removalSummary(removed));
+        recordCrawlerRuleAction(response.url(), "Rejected before parsing by crawler source "
+                + crawlerSourceRejectionMatch.shortSummary() + removalSummary(removed), "Rejected before parsing by crawler source "
+                + crawlerSourceRejectionMatch.summary() + removalSummary(removed));
         return "Not Parsed Resource '" + response.url().toNormalform(true)
                 + "': rejected by crawler source rule '" + crawlerSourceRejectionRule + "'";
     }
 
     private String crawlerContentRejection(final Document document, final String infoPrefix, final String actionContext) {
         final DigestURL url = document.dc_source();
-        final String poisonPillRule = this.crawlerContentRejection.firstMatchingPoisonPill(document);
-        if (poisonPillRule != null) {
-            final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(url, poisonPillRule, "crawler content poison pill");
-            recordCrawlerRuleAction(url, "Poison pill '" + poisonPillRule + "' matched at " + actionContext + ". "
-                    + cleanup.summary());
-            return infoPrefix + ": rejected by crawler content poison pill '" + poisonPillRule + "'";
+        final CrawlerContentRejection.RuleMatch poisonPillMatch = this.crawlerContentRejection.firstPoisonPillMatch(document);
+        if (poisonPillMatch != null) {
+            if (isCrawlerPoisonPillWhitelisted(url)) {
+                recordCrawlerRuleAction(url, "Poison pill skipped for whitelisted host at " + actionContext + ": "
+                        + poisonPillMatch.shortSummary(), "Poison pill skipped for whitelisted host at " + actionContext + ": "
+                        + poisonPillMatch.summary());
+            } else {
+                final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(url, poisonPillMatch.rule, "crawler content poison pill");
+                recordCrawlerRuleAction(url, "Poison pill matched at " + actionContext + ": "
+                        + poisonPillMatch.shortSummary() + ". " + cleanup.summary(), "Poison pill matched at " + actionContext + ": "
+                        + poisonPillMatch.summary() + ". " + cleanup.summary(), cleanup.host, POISON_PILL_BLACKLIST);
+                return infoPrefix + ": rejected by crawler content poison pill '" + poisonPillMatch.rule + "'";
+            }
         }
 
-        final String crawlerContentRejectionRule = this.crawlerContentRejection.firstMatchingRule(document);
-        if (crawlerContentRejectionRule == null) {
+        final CrawlerContentRejection.RuleMatch crawlerContentRejectionMatch = this.crawlerContentRejection.firstRuleMatch(document);
+        if (crawlerContentRejectionMatch == null) {
             return null;
         }
 
+        final String crawlerContentRejectionRule = crawlerContentRejectionMatch.rule;
         final int removed = removeRejectedIndexDocuments(url, "crawler content rule '" + crawlerContentRejectionRule + "'");
-        recordCrawlerRuleAction(url, "Rejected " + actionContext + " by crawler content rule '" + crawlerContentRejectionRule + "'" + removalSummary(removed));
+        recordCrawlerRuleAction(url, "Rejected " + actionContext + " by crawler content "
+                + crawlerContentRejectionMatch.shortSummary() + removalSummary(removed), "Rejected " + actionContext + " by crawler content "
+                + crawlerContentRejectionMatch.summary() + removalSummary(removed));
         return infoPrefix + ": rejected by crawler content rule '" + crawlerContentRejectionRule + "'";
+    }
+
+    private boolean isCrawlerPoisonPillWhitelisted(final DigestURL url) {
+        return url != null && this.crawlerContentRejection != null && this.crawlerContentRejection.isWhitelisted(url.getHost());
     }
 
     private PoisonPillCleanupResult cleanupPoisonPillHost(final DigestURL url, final String poisonPillRule, final String reason) {
@@ -3830,7 +4080,7 @@ public final class Switchboard extends serverSwitch {
     private void removeNonCanonicalYouTubeIndexDocuments(final DigestURL url) {
         final int removed = removeYouTubeIndexDocuments(url, "non-canonical YouTube cleanup", false);
         if (removed > 0) {
-            recordCrawlerRuleAction(url, "Removed " + removed + " non-canonical YouTube index record(s)");
+            recordCrawlerRuleActionLiveOnly(url, "Removed " + removed + " non-canonical YouTube index record(s)");
         }
     }
 
@@ -3918,6 +4168,14 @@ public final class Switchboard extends serverSwitch {
         }
     }
 
+    private static String parkedDomainCleanupDomain(final DigestURL url, final ParkedDomainCandidate parkedDomainCandidate) {
+        return parkedDomainCandidate == null ? "" : topPrivateDomain(url);
+    }
+
+    private static boolean parkedDomainManualCleanupAvailable(final ParkedDomainCandidate parkedDomainCandidate, final String action) {
+        return parkedDomainCandidate != null && crawlerRuleCleanupBlacklistFromAction(action).length() == 0;
+    }
+
     public String crawlerAbandonedDomainAction(final DigestURL url, final IOException failure, final String fallbackAction) {
         if (url == null || !isAbandonedDomainFailure(failure)) {
             return fallbackAction;
@@ -3931,7 +4189,7 @@ public final class Switchboard extends serverSwitch {
             final String action = "Host '" + cleanupHost + "' could not be resolved. It has been blacklisted in "
                     + DOMAIN_ABANDONED_BLACKLIST + " and matching URLs for that host were removed from the index. "
                     + cleanup.summary();
-            recordCrawlerRuleAction(url, action);
+            recordCrawlerRuleAction(url, action, action, cleanupHost, DOMAIN_ABANDONED_BLACKLIST);
             return action;
         } catch (final IOException e) {
             this.log.warn("Could not automatically clean abandoned host '" + cleanupHost + "': " + e.getMessage());
@@ -4445,7 +4703,7 @@ public final class Switchboard extends serverSwitch {
             actions.add("dropped generic keywords when present");
         }
         if (!actions.isEmpty()) {
-            recordCrawlerRuleAction(document.dc_source(), "YouTube metadata normalized: " + String.join(", ", actions));
+            recordCrawlerRuleActionLiveOnly(document.dc_source(), "YouTube metadata normalized: " + String.join(", ", actions));
         }
     }
 

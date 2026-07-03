@@ -37,6 +37,11 @@ public class CrawlerContentRejection_p {
                     prop.put("status", "1");
                     prop.put("status_success", "1");
                     prop.putHTML("status_message", "Poison pill crawler content rejection rule added.");
+                } else if (post.containsKey("addWhitelistEntry")) {
+                    rejectionRules.addWhitelistEntry(post.get("newWhitelistEntry", ""));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Crawler content rejection whitelist entry added.");
                 } else if (post.containsKey("deleteRules")) {
                     rejectionRules.deleteRules(Arrays.asList(post.getAll("selectedRule.*")));
                     prop.put("status", "1");
@@ -47,6 +52,11 @@ public class CrawlerContentRejection_p {
                     prop.put("status", "1");
                     prop.put("status_success", "1");
                     prop.putHTML("status_message", "Selected poison pill crawler content rejection rules deleted.");
+                } else if (post.containsKey("deleteWhitelistEntries")) {
+                    rejectionRules.deleteWhitelistEntries(Arrays.asList(post.getAll("selectedWhitelistEntry.*")));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Selected crawler content rejection whitelist entries deleted.");
                 } else if (post.containsKey("saveRules")) {
                     rejectionRules.setRules(Arrays.asList(post.get("rulesText", "").split("\\r?\\n")));
                     prop.put("status", "1");
@@ -57,6 +67,11 @@ public class CrawlerContentRejection_p {
                     prop.put("status", "1");
                     prop.put("status_success", "1");
                     prop.putHTML("status_message", "Poison pill crawler content rejection rules saved.");
+                } else if (post.containsKey("saveWhitelist")) {
+                    rejectionRules.setWhitelist(Arrays.asList(post.get("whitelistText", "").split("\\r?\\n")));
+                    prop.put("status", "1");
+                    prop.put("status_success", "1");
+                    prop.putHTML("status_message", "Crawler content rejection whitelist saved.");
                 }
             } catch (final IOException e) {
                 prop.put("status", "1");
@@ -94,6 +109,21 @@ public class CrawlerContentRejection_p {
         }
         prop.put("hasPoisonPills_poisonPillList", poisonPills.size());
         prop.put("poisonPillsText", CharacterCoding.unicode2html(poisonPillsText.toString(), true));
+
+        final List<String> whitelist = rejectionRules.getWhitelist();
+        prop.putNum("whitelistCount", whitelist.size());
+        prop.put("hasWhitelist", whitelist.isEmpty() ? "0" : "1");
+
+        final StringBuilder whitelistText = new StringBuilder();
+        for (int i = 0; i < whitelist.size(); i++) {
+            final String entry = whitelist.get(i);
+            prop.put("hasWhitelist_whitelistList_" + i + "_count", i);
+            prop.put("hasWhitelist_whitelistList_" + i + "_entry", CharacterCoding.unicode2html(entry, true));
+            prop.put("hasWhitelist_whitelistList_" + i + "_dark", (i & 1) == 0 ? "1" : "0");
+            whitelistText.append(entry).append('\n');
+        }
+        prop.put("hasWhitelist_whitelistList", whitelist.size());
+        prop.put("whitelistText", CharacterCoding.unicode2html(whitelistText.toString(), true));
 
         return prop;
     }

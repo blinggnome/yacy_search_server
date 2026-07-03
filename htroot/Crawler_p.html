@@ -281,6 +281,42 @@ window.setInterval("setTableSize()", 1000);
     </table>
 </fieldset>
 
+<fieldset id="crawlerRuleActionLogFieldset" style="clear:both;">
+    <legend>Crawler Rule Action Audit Log (<span id="crawlerRuleActionLogCount">#[crawlerRuleActionLog_count]#</span>)</legend>
+    <p>Recent durable entries from <code>DATA/LOG/crawler-rule-actions.log</code>. This survives restart and records rule match details when available.</p>
+    <table border="0" class="watchCrawler" id="crawlerRuleActionLog">
+        <thead>
+            <tr class="TableHeader">
+                <th width="120">Time</th>
+                <th>URL</th>
+                <th>Action</th>
+                <th width="220">Blacklist Undo</th>
+            </tr>
+        </thead>
+        <tbody id="crawlerRuleActionLogBody">
+            #(crawlerRuleActionLog)#
+            <tr class="TableCellLight"><td colspan="4">No crawler rule audit log entries.</td></tr>::
+            #{list}#
+            <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
+                <td class="crawlerRuleActionTime" data-time="#[time]#">#[time]#</td>
+                <td><a href="#[url]#" target="_blank">#[url]#</a></td>
+                <td>#[action]#</td>
+                <td>#(restore)#::
+                    <form method="post" action="Crawler_p.html" onsubmit="return confirm('Remove blacklist rule(s) for #[domain]# from #[blacklist]#? This does not restore already deleted index records.');" style="margin:0;">
+                        <input type="hidden" name="transactionToken" value="#[transactionToken]#" />
+                        <input type="hidden" name="crawlerRuleAuditRemoveBlacklist" value="true" />
+                        <input type="hidden" name="domain" value="#[domain]#" />
+                        <input type="hidden" name="blacklistname" value="#[blacklist]#" />
+                        <input type="submit" class="btn btn-warning btn-xs" value="Remove block" title="Remove blacklist rule(s) for #[domain]# from #[blacklist]#. Deleted index records are not restored." />
+                    </form>
+                #(/restore)#</td>
+            </tr>
+            #{/list}#
+            #(/crawlerRuleActionLog)#
+        </tbody>
+    </table>
+</fieldset>
+
 <!-- crawl profile list -->
 #(crawlProfilesShow)#::
 <fieldset>

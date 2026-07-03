@@ -150,6 +150,7 @@ function handleStatus(){
 	
 	refreshRunningCrawls(statusTag);
 	refreshCrawlerRuleActions(statusTag);
+	refreshCrawlerRuleActionLog(statusTag);
 
 	var postprocessing = getFirstChild(statusTag, "postprocessing");
 	document.getElementById("postprocessing_status").firstChild.nodeValue=getValue(getFirstChild(postprocessing, "status"));
@@ -250,6 +251,58 @@ function refreshCrawlerRuleActions(statusTag) {
 	}
 }
 
+function refreshCrawlerRuleActionLog(statusTag) {
+	var actions = getFirstChild(statusTag, "crawlerRuleActionLog");
+	var tbody = document.getElementById("crawlerRuleActionLogBody");
+	var countNode = document.getElementById("crawlerRuleActionLogCount");
+	if(actions == null || tbody == null) {
+		return;
+	}
+	removeAllChildren(tbody);
+	var count = actions.getAttribute("count") || "0";
+	if(countNode != null) {
+		countNode.textContent = count;
+	}
+	var actionNode = getFirstChild(actions, "action");
+	if(actionNode == null) {
+		var emptyRow = tbody.insertRow();
+		emptyRow.className = "TableCellLight";
+		var emptyCell = emptyRow.insertCell();
+		emptyCell.colSpan = 4;
+		emptyCell.textContent = "No crawler rule audit log entries.";
+		return;
+	}
+	var rowIndex = 0;
+	for(; actionNode; actionNode = getNextSibling(actionNode, "action")) {
+		var row = tbody.insertRow();
+		row.className = rowIndex % 2 == 0 ? "TableCellLight" : "TableCellDark";
+
+		var time = getValue(getFirstChild(actionNode, "time"));
+		var timeCell = row.insertCell();
+		timeCell.textContent = formatCrawlerRuleActionTime(time);
+
+		var url = getValue(getFirstChild(actionNode, "url"));
+		var urlCell = row.insertCell();
+		var link = document.createElement("a");
+		link.href = url;
+		link.target = "_blank";
+		link.textContent = shortenURL(url);
+		link.title = url;
+		urlCell.appendChild(link);
+
+		var actionCell = row.insertCell();
+		actionCell.textContent = getValue(getFirstChild(actionNode, "summary"));
+
+		var restoreCell = row.insertCell();
+		var restoreDomain = getValue(getFirstChild(actionNode, "restoreDomain"));
+		var restoreBlacklist = getValue(getFirstChild(actionNode, "restoreBlacklist"));
+		if(restoreDomain.length > 0 && restoreBlacklist.length > 0) {
+			restoreCell.appendChild(createCrawlerBlacklistUndoForm(restoreDomain, restoreBlacklist));
+		}
+		rowIndex++;
+	}
+}
+
 function createCrawlerDomainCleanupForm(domain) {
 	var form = document.createElement("form");
 	form.method = "post";
@@ -268,6 +321,28 @@ function createCrawlerDomainCleanupForm(domain) {
 	button.className = "btn btn-danger btn-xs";
 	button.value = "Purge + blacklist";
 	button.title = "Remove indexed records for " + domain + " and all subdomains, then add future-crawl blocks to url.domain_for_sale.black.";
+	form.appendChild(button);
+	return form;
+}
+
+function createCrawlerBlacklistUndoForm(domain, blacklist) {
+	var form = document.createElement("form");
+	form.method = "post";
+	form.action = "Crawler_p.html";
+	form.style.margin = "0";
+	form.onsubmit = function() {
+		return confirm("Remove blacklist rule(s) for " + domain + " from " + blacklist + "? This does not restore already deleted index records.");
+	};
+	appendHiddenInput(form, "transactionToken", getInputValue("crawlerTransactionToken"));
+	appendHiddenInput(form, "crawlerRuleAuditRemoveBlacklist", "true");
+	appendHiddenInput(form, "domain", domain);
+	appendHiddenInput(form, "blacklistname", blacklist);
+
+	var button = document.createElement("input");
+	button.type = "submit";
+	button.className = "btn btn-warning btn-xs";
+	button.value = "Remove block";
+	button.title = "Remove blacklist rule(s) for " + domain + " from " + blacklist + ". Deleted index records are not restored.";
 	form.appendChild(button);
 	return form;
 }

@@ -139,16 +139,33 @@ public class status_p {
         prop.put("crawlProfiles", count == 0 ? 0 : 1);
 
         count = 0;
+        final boolean deadDomainAutoCleanup = sb.getConfigBool(Switchboard.CRAWLER_DEAD_DOMAIN_AUTO_CLEANUP, false);
         for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActions()) {
+            final String cleanupDomain = !deadDomainAutoCleanup && action.manualCleanupAvailable && action.cleanupDomain.length() > 0
+                    ? action.cleanupDomain
+                    : "";
             prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putXML("crawlerRuleActions_list_" + count + "_url", action.url);
             prop.putXML("crawlerRuleActions_list_" + count + "_action", action.action);
-            prop.putXML("crawlerRuleActions_list_" + count + "_cleanupDomain", action.cleanupDomain);
+            prop.putXML("crawlerRuleActions_list_" + count + "_cleanupDomain", cleanupDomain);
             count++;
         }
         prop.put("crawlerRuleActions_list", count);
         prop.put("crawlerRuleActions_count", count);
         prop.put("crawlerRuleActions", count == 0 ? 0 : 1);
+
+        count = 0;
+        for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActionLog()) {
+            prop.put("crawlerRuleActionLog_list_" + count + "_time", Long.toString(action.timestamp));
+            prop.putXML("crawlerRuleActionLog_list_" + count + "_url", action.url);
+            prop.putXML("crawlerRuleActionLog_list_" + count + "_action", action.action);
+            prop.putXML("crawlerRuleActionLog_list_" + count + "_restoreDomain", action.cleanupDomain);
+            prop.putXML("crawlerRuleActionLog_list_" + count + "_restoreBlacklist", action.cleanupBlacklist);
+            count++;
+        }
+        prop.put("crawlerRuleActionLog_list", count);
+        prop.put("crawlerRuleActionLog_count", count);
+        prop.put("crawlerRuleActionLog", count == 0 ? 0 : 1);
 
         prop.put("postprocessingRunning", CollectionConfiguration.postprocessingRunning ? 1 : 0);
 

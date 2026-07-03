@@ -90,6 +90,21 @@
   #{/list}#
   </crawlerRuleActions>
 #(/crawlerRuleActions)#
+
+<!-- durable crawler rule audit log -->
+#(crawlerRuleActionLog)#<crawlerRuleActionLog count="0"/>::
+  <crawlerRuleActionLog count="#[count]#">
+  #{list}#
+    <action>
+      <time>#[time]#</time>
+      <url>#[url]#</url>
+      <summary>#[action]#</summary>
+      <restoreDomain>#[restoreDomain]#</restoreDomain>
+      <restoreBlacklist>#[restoreBlacklist]#</restoreBlacklist>
+    </action>
+  #{/list}#
+  </crawlerRuleActionLog>
+#(/crawlerRuleActionLog)#
   
   <postprocessing>
     <collectionRemainingCount>#[postprocessingCollectionRemainingCount]#</collectionRemainingCount>

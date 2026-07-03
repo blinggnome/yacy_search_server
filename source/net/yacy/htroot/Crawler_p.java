@@ -65,6 +65,7 @@ import net.yacy.crawler.data.CrawlProfile;
 import net.yacy.crawler.data.CrawlProfile.CrawlAttribute;
 import net.yacy.crawler.data.NoticedURL.StackType;
 import net.yacy.crawler.retrieval.SitemapImporter;
+import net.yacy.data.ListManager;
 import net.yacy.data.TransactionManager;
 import net.yacy.data.WorkTables;
 import net.yacy.document.Document;
@@ -167,6 +168,47 @@ public class Crawler_p {
                     prop.put("crawlerRuleActions_cleanupResult_success", 0);
                     prop.putHTML("crawlerRuleActions_cleanupResult_message", "Domain cleanup failed for " + cleanupDomain + ": " + e.getMessage());
                 }
+            }
+        }
+        if (post != null && post.containsKey("crawlerRuleAuditRemoveBlacklist")) {
+            TransactionManager.checkPostTransaction(header, post);
+            final String blacklistName = crawlerRuleAuditBlacklistName(post.get("blacklistname", ""));
+            final String cleanupDomain = Switchboard.DOMAIN_FOR_SALE_BLACKLIST.equals(blacklistName)
+                    ? normalizeCleanupDomain(post.get("domain", ""))
+                    : normalizeBlacklistHost(post.get("domain", ""));
+            if (cleanupDomain.length() == 0 || blacklistName.length() == 0) {
+                prop.put("crawlerRuleActions_cleanupResult", 1);
+                prop.put("crawlerRuleActions_cleanupResult_success", 0);
+                prop.putHTML("crawlerRuleActions_cleanupResult_message", "Blacklist undo was not run: invalid host/domain or unsupported blacklist.");
+            } else {
+                final List<String> blacklistRules = crawlerRuleAuditBlacklistRules(blacklistName, cleanupDomain);
+                final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(blacklistName)));
+                int removed = 0;
+                int missing = 0;
+                String errorLocation = null;
+                for (final String blacklistRule : blacklistRules) {
+                    if (!existingBlacklistEntries.contains(blacklistRule)) {
+                        missing++;
+                        continue;
+                    }
+                    errorLocation = BlacklistHelper.deleteBlacklistEntry(blacklistName, blacklistRule, header);
+                    if (errorLocation != null) {
+                        break;
+                    }
+                    removed++;
+                }
+                Switchboard.urlBlacklist.clear();
+                ListManager.reloadBlacklists();
+                SearchEventCache.cleanupEvents(true);
+                sb.tables.recordAPICall(post, "Crawler_p.html", WorkTables.TABLE_API_TYPE_STEERING,
+                        "remove crawler rule audit blacklist entries from " + blacklistName + " for " + cleanupDomain);
+                prop.put("crawlerRuleActions_cleanupResult", 1);
+                prop.put("crawlerRuleActions_cleanupResult_success", errorLocation == null ? 1 : 0);
+                prop.putHTML("crawlerRuleActions_cleanupResult_message",
+                        "Removed " + removed + " blacklist rule(s) from " + blacklistName + " for " + cleanupDomain
+                        + (missing > 0 ? " (" + missing + " already absent)" : "")
+                        + (errorLocation == null ? ". Previously removed index records were not restored; future crawls can re-add allowed content."
+                                : ". Blacklist reload returned an error location: " + errorLocation));
             }
         }
         final String localSolr = "solr/select?core=collection1&q=*:*&start=0&rows=3";
@@ -917,13 +959,15 @@ public class Crawler_p {
         count = 0;
         dark = true;
         final String crawlerRuleActionsBlacklist = Switchboard.DOMAIN_FOR_SALE_BLACKLIST;
+        final boolean deadDomainAutoCleanup = sb.getConfigBool(Switchboard.CRAWLER_DEAD_DOMAIN_AUTO_CLEANUP, false);
         prop.putHTML("crawlerRuleActions_blacklist", crawlerRuleActionsBlacklist == null ? "" : crawlerRuleActionsBlacklist);
         for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActions()) {
             prop.put("crawlerRuleActions_list_" + count + "_dark", dark ? 1 : 0);
             prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putHTML("crawlerRuleActions_list_" + count + "_url", action.url);
             prop.putHTML("crawlerRuleActions_list_" + count + "_action", action.action);
-            prop.put("crawlerRuleActions_list_" + count + "_cleanup", action.cleanupDomain.length() == 0 ? 0 : 1);
+            prop.put("crawlerRuleActions_list_" + count + "_cleanup",
+                    !deadDomainAutoCleanup && action.manualCleanupAvailable && action.cleanupDomain.length() > 0 ? 1 : 0);
             prop.putHTML("crawlerRuleActions_list_" + count + "_cleanup_domain", action.cleanupDomain);
             prop.putHTML("crawlerRuleActions_list_" + count + "_cleanup_blacklist", crawlerRuleActionsBlacklist == null ? "" : crawlerRuleActionsBlacklist);
             prop.put("crawlerRuleActions_list_" + count + "_cleanup_" + TransactionManager.TRANSACTION_TOKEN_PARAM, transactionToken);
@@ -933,6 +977,28 @@ public class Crawler_p {
         prop.put("crawlerRuleActions_list", count);
         prop.put("crawlerRuleActions_count", count);
         prop.put("crawlerRuleActions", count == 0 ? 0 : 1);
+        final int crawlerRuleActionsCount = count;
+
+        count = 0;
+        dark = true;
+        for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActionLog()) {
+            final String auditBlacklistName = crawlerRuleAuditBlacklistName(action);
+            prop.put("crawlerRuleActionLog_list_" + count + "_dark", dark ? 1 : 0);
+            prop.put("crawlerRuleActionLog_list_" + count + "_time", Long.toString(action.timestamp));
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_url", action.url);
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_action", action.action);
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_cleanup_domain", action.cleanupDomain);
+            prop.put("crawlerRuleActionLog_list_" + count + "_restore", auditBlacklistName.length() == 0 ? 0 : 1);
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_restore_domain", action.cleanupDomain);
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_restore_blacklist", auditBlacklistName);
+            prop.put("crawlerRuleActionLog_list_" + count + "_restore_" + TransactionManager.TRANSACTION_TOKEN_PARAM, transactionToken);
+            dark = !dark;
+            count++;
+        }
+        prop.put("crawlerRuleActionLog_list", count);
+        prop.put("crawlerRuleActionLog_count", count);
+        prop.put("crawlerRuleActionLog", count == 0 ? 0 : 1);
+        count = crawlerRuleActionsCount;
 
         if (post != null) { // handle config button to display graphic
             if (post.get("hidewebstructuregraph") != null) sb.setConfig(SwitchboardConstants.DECORATION_GRAFICS_LINKSTRUCTURE, false);
@@ -1037,6 +1103,74 @@ public class Crawler_p {
             return "";
         }
         return normalized;
+    }
+
+    private static String normalizeBlacklistHost(final String host) {
+        if (host == null) {
+            return "";
+        }
+        String normalized = host.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+            try {
+                normalized = new MultiProtocolURL(normalized).getHost();
+            } catch (final MalformedURLException e) {
+                return "";
+            }
+        }
+        while (normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.length() == 0 || normalized.indexOf('/') >= 0 || normalized.indexOf('*') >= 0 || normalized.indexOf('\\') >= 0) {
+            return "";
+        }
+        if (!normalized.matches("[a-z0-9][a-z0-9.-]*\\.[a-z0-9-]+")) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private static String crawlerRuleAuditBlacklistName(final String blacklistName) {
+        if (Switchboard.DOMAIN_FOR_SALE_BLACKLIST.equals(blacklistName)) {
+            return Switchboard.DOMAIN_FOR_SALE_BLACKLIST;
+        }
+        if (Switchboard.DOMAIN_ABANDONED_BLACKLIST.equals(blacklistName)) {
+            return Switchboard.DOMAIN_ABANDONED_BLACKLIST;
+        }
+        if (Switchboard.POISON_PILL_BLACKLIST.equals(blacklistName)) {
+            return Switchboard.POISON_PILL_BLACKLIST;
+        }
+        return "";
+    }
+
+    private static String crawlerRuleAuditBlacklistName(final Switchboard.CrawlerRuleAction action) {
+        if (action == null || action.cleanupDomain.length() == 0) {
+            return "";
+        }
+        if (action.cleanupBlacklist.length() > 0) {
+            return action.cleanupBlacklist;
+        }
+        if (action.action.indexOf(Switchboard.DOMAIN_FOR_SALE_BLACKLIST) >= 0) {
+            return Switchboard.DOMAIN_FOR_SALE_BLACKLIST;
+        }
+        if (action.action.indexOf(Switchboard.DOMAIN_ABANDONED_BLACKLIST) >= 0) {
+            return Switchboard.DOMAIN_ABANDONED_BLACKLIST;
+        }
+        if (action.action.indexOf(Switchboard.POISON_PILL_BLACKLIST) >= 0) {
+            return Switchboard.POISON_PILL_BLACKLIST;
+        }
+        return "";
+    }
+
+    private static List<String> crawlerRuleAuditBlacklistRules(final String blacklistName, final String cleanupDomain) {
+        final List<String> rules = new ArrayList<>();
+        if (Switchboard.DOMAIN_FOR_SALE_BLACKLIST.equals(blacklistName)) {
+            rules.add(BlacklistHelper.prepareEntry(cleanupDomain + "/.*"));
+            rules.add(BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*"));
+        } else if (Switchboard.DOMAIN_ABANDONED_BLACKLIST.equals(blacklistName)
+                || Switchboard.POISON_PILL_BLACKLIST.equals(blacklistName)) {
+            rules.add(BlacklistHelper.prepareEntry(cleanupDomain + "/.*"));
+        }
+        return rules;
     }
 
     private static Set<String> indexedHostsForDomain(final Fulltext fulltext, final String domain) throws IOException {

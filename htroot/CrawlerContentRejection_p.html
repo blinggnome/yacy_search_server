@@ -13,7 +13,8 @@
       Plain text rules entered here are matched case-insensitively during crawling.
       Soft rules reject the matching page and remove an existing indexed record for that URL.
       Poison pills are stronger: a match rejects the page, adds the host to <code>url.poison_pill.black</code>,
-      and removes indexed records for that host.
+      and removes indexed records for that host. Whitelisted hosts skip poison pill host-wide cleanup,
+      but soft rules and normal crawler cleanup still apply.
     </p>
 
     #(status)#
@@ -61,6 +62,51 @@
         <textarea name="rulesText" cols="100" rows="16">#[rulesText]#</textarea>
         <br />
         <input type="submit" name="saveRules" class="btn btn-primary" value="Save soft rules" />
+      </form>
+    </fieldset>
+
+
+    <fieldset>
+      <legend>Add whitelist host</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <input type="text" name="newWhitelistEntry" size="80" placeholder="example.com" />
+        <input type="submit" name="addWhitelistEntry" class="btn btn-primary" value="Add whitelist host" />
+      </form>
+    </fieldset>
+
+    <fieldset>
+      <legend>Whitelist</legend>
+      <p>There are #[whitelistCount]# crawler content rejection whitelist entries.</p>
+      <p>Entries are host or domain names. A whitelist entry protects that host and subdomains from poison pill host-wide purge and blacklist actions.</p>
+      #(hasWhitelist)#
+      <p>No crawler content rejection whitelist entries are currently configured.</p>
+      ::
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <table border="0">
+          <tr class="TableHeader">
+            <td></td>
+            <td><strong>Whitelist Host</strong></td>
+          </tr>
+          #{whitelistList}#
+          <tr class="TableCell#(dark)#Light::Dark#(/dark)#">
+            <td><input type="checkbox" name="selectedWhitelistEntry.#[count]#" id="selectedWhitelistEntry.#[count]#" value="#[entry]#" /></td>
+            <td><label for="selectedWhitelistEntry.#[count]#">#[entry]#</label></td>
+          </tr>
+          #{/whitelistList}#
+        </table>
+        <br />
+        <input type="submit" name="deleteWhitelistEntries" class="btn btn-danger" value="Delete selected whitelist entries" />
+      </form>
+      #(/hasWhitelist)#
+    </fieldset>
+
+    <fieldset>
+      <legend>Bulk edit whitelist</legend>
+      <form action="CrawlerContentRejection_p.html" method="post" enctype="multipart/form-data" accept-charset="UTF-8">
+        <p>One host or domain name per line. Schemes, paths, ports, leading <code>*.</code>, blank lines, and lines beginning with <code>#</code> are normalized or ignored.</p>
+        <textarea name="whitelistText" cols="100" rows="8">#[whitelistText]#</textarea>
+        <br />
+        <input type="submit" name="saveWhitelist" class="btn btn-primary" value="Save whitelist" />
       </form>
     </fieldset>
 
