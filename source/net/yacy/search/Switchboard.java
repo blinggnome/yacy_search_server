@@ -3620,10 +3620,7 @@ public final class Switchboard extends serverSwitch {
                 final int removed = removeRejectedIndexDocuments(document.dc_source(), "zero-content document");
                 final String action = crawlerParkedDomainAction(document.dc_source(), parkedDomainCandidate,
                         "Rejected zero-content document" + parkedDomainSummary + removalSummary(removed));
-                recordCrawlerRuleAction(document.dc_source(), action, action,
-                        parkedDomainCleanupDomain(document.dc_source(), parkedDomainCandidate),
-                        crawlerRuleCleanupBlacklistFromAction(action),
-                        parkedDomainManualCleanupAvailable(parkedDomainCandidate, action));
+                recordZeroContentCrawlerRuleAction(document.dc_source(), action, parkedDomainCandidate);
                 this.crawlQueues.errorURL.push(in.queueEntry.url(), in.queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT, info, -1);
                 continue docloop;
             }
@@ -3792,8 +3789,7 @@ public final class Switchboard extends serverSwitch {
             final int removed = removeRejectedIndexDocuments(url, "zero-content document, process case=" + processCase);
             final String action = crawlerParkedDomainAction(url, parkedDomainCandidate,
                     "Rejected zero-content document at index storage" + parkedDomainSummary + removalSummary(removed));
-            recordCrawlerRuleAction(url, action, action, parkedDomainCleanupDomain(url, parkedDomainCandidate),
-                    crawlerRuleCleanupBlacklistFromAction(action), parkedDomainManualCleanupAvailable(parkedDomainCandidate, action));
+            recordZeroContentCrawlerRuleAction(url, action, parkedDomainCandidate);
             this.crawlQueues.errorURL.push(url, queueEntry.depth(), profile, FailCategory.FINAL_PROCESS_CONTEXT,
                     "rejected zero-content document" + parkedDomainSummary + ", process case=" + processCase, -1);
             return;
@@ -4007,6 +4003,16 @@ public final class Switchboard extends serverSwitch {
                 + crawlerContentRejectionMatch.shortSummary() + removalSummary(removed), "Rejected " + actionContext + " by crawler content "
                 + crawlerContentRejectionMatch.summary() + removalSummary(removed));
         return infoPrefix + ": rejected by crawler content rule '" + crawlerContentRejectionRule + "'";
+    }
+
+    private void recordZeroContentCrawlerRuleAction(final DigestURL url, final String action,
+            final ParkedDomainCandidate parkedDomainCandidate) {
+        final String cleanupBlacklist = crawlerRuleCleanupBlacklistFromAction(action);
+        final boolean audit = cleanupBlacklist.length() > 0;
+        recordCrawlerRuleAction(url, action, audit ? action : null,
+                parkedDomainCleanupDomain(url, parkedDomainCandidate),
+                cleanupBlacklist,
+                parkedDomainManualCleanupAvailable(parkedDomainCandidate, action));
     }
 
     private boolean isCrawlerPoisonPillWhitelisted(final DigestURL url) {
