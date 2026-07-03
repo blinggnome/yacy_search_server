@@ -56,6 +56,7 @@ import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
@@ -338,6 +339,7 @@ public final class Switchboard extends serverSwitch {
     public HashMap<String, Object[]> crawlJobsStatus = new HashMap<>();
     public static final String CRAWLER_DEAD_DOMAIN_AUTO_CLEANUP = "crawler.deadDomains.autoCleanup";
     public static final String DOMAIN_FOR_SALE_BLACKLIST = "url.domain_for_sale.black";
+    public static final String DOMAIN_ABANDONED_BLACKLIST = "url.domain_abandoned.black";
     public static final String POISON_PILL_BLACKLIST = "url.poison_pill.black";
     private static final int CRAWLER_RULE_ACTION_LIMIT = 50;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS = 5000;
@@ -3916,7 +3918,109 @@ public final class Switchboard extends serverSwitch {
         }
     }
 
+    public String crawlerAbandonedDomainAction(final DigestURL url, final IOException failure, final String fallbackAction) {
+        if (url == null || !isAbandonedDomainFailure(failure)) {
+            return fallbackAction;
+        }
+        final String cleanupHost = abandonedHost(url);
+        if (cleanupHost.length() == 0) {
+            return fallbackAction;
+        }
+        try {
+            final AbandonedHostCleanupResult cleanup = cleanupAbandonedHost(cleanupHost);
+            final String action = "Host '" + cleanupHost + "' could not be resolved. It has been blacklisted in "
+                    + DOMAIN_ABANDONED_BLACKLIST + " and matching URLs for that host were removed from the index. "
+                    + cleanup.summary();
+            recordCrawlerRuleAction(url, action);
+            return action;
+        } catch (final IOException e) {
+            this.log.warn("Could not automatically clean abandoned host '" + cleanupHost + "': " + e.getMessage());
+            return fallbackAction + "; automatic abandoned-host cleanup failed for " + cleanupHost + ": " + e.getMessage();
+        }
+    }
+
+    private static boolean isAbandonedDomainFailure(final Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof UnknownHostException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static String abandonedHost(final DigestURL url) {
+        if (url == null || url.getHost() == null) {
+            return "";
+        }
+        final String host = url.getHost().toLowerCase(Locale.ROOT);
+        if (host.length() == 0) {
+            return "";
+        }
+        try {
+            final InternetDomainName domainName = InternetDomainName.from(host);
+            if (!domainName.isUnderPublicSuffix()) {
+                return "";
+            }
+            final String registrableDomain = domainName.topPrivateDomain().toString();
+            if (registrableDomain.startsWith("www.")) {
+                return "";
+            }
+            if (!host.equals(registrableDomain) && hostResolves(registrableDomain)) {
+                return "";
+            }
+        } catch (final IllegalArgumentException | IllegalStateException e) {
+            return "";
+        }
+        return host;
+    }
+
+    private static boolean hostResolves(final String host) {
+        try {
+            InetAddress.getByName(host);
+            return true;
+        } catch (final UnknownHostException e) {
+            return false;
+        } catch (final SecurityException e) {
+            return true;
+        }
+    }
+
+    private AbandonedHostCleanupResult cleanupAbandonedHost(final String cleanupHost) throws IOException {
+        int indexedRecords = 0;
+        try {
+            indexedRecords = (int) this.index.fulltext().getDefaultConnector().getCountByQuery(
+                    "{!cache=false raw f=" + CollectionSchema.host_s.getSolrFieldName() + "}" + cleanupHost);
+        } catch (final IOException e) {
+            this.log.warn("Could not count indexed abandoned host records for '" + cleanupHost + "': " + e.getMessage());
+        }
+
+        this.index.fulltext().deleteStaleDomainNames(new HashSet<String>(Collections.singleton(cleanupHost)), null);
+        try {
+            this.index.loadTimeIndex().clear();
+        } catch (final IOException e) {
+            ConcurrentLog.warn("Switchboard", "Could not clear load-time index after abandoned-host cleanup", e);
+        }
+        this.index.fulltext().commit(true);
+
+        final String blacklistRule = BlacklistHelper.prepareEntry(cleanupHost + "/.*");
+        final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(DOMAIN_ABANDONED_BLACKLIST)));
+        final boolean alreadyPresent = existingBlacklistEntries.contains(blacklistRule);
+        final boolean blacklistOk = BlacklistHelper.addBlacklistEntry(DOMAIN_ABANDONED_BLACKLIST, blacklistRule);
+        if (blacklistOk) {
+            ListManager.updateListSet(BlacklistType.CRAWLER + ".BlackLists", DOMAIN_ABANDONED_BLACKLIST);
+        }
+        SearchEventCache.cleanupEvents(true);
+
+        return new AbandonedHostCleanupResult(indexedRecords, blacklistOk && !alreadyPresent, alreadyPresent, blacklistOk ? 0 : 1);
+    }
+
     private DeadDomainCleanupResult cleanupDeadDomain(final String cleanupDomain) throws IOException {
+        return cleanupDomain(cleanupDomain, DOMAIN_FOR_SALE_BLACKLIST);
+    }
+
+    private DeadDomainCleanupResult cleanupDomain(final String cleanupDomain, final String blacklistName) throws IOException {
         final Set<String> hostnames = indexedHostsForDomain(cleanupDomain);
         hostnames.add(cleanupDomain);
         hostnames.add("www." + cleanupDomain);
@@ -3930,11 +4034,14 @@ public final class Switchboard extends serverSwitch {
 
         final String rootBlacklistRule = BlacklistHelper.prepareEntry(cleanupDomain + "/.*");
         final String subdomainBlacklistRule = BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*");
-        final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(DOMAIN_FOR_SALE_BLACKLIST)));
+        final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(blacklistName)));
         final boolean rootAlreadyPresent = existingBlacklistEntries.contains(rootBlacklistRule);
         final boolean subdomainAlreadyPresent = existingBlacklistEntries.contains(subdomainBlacklistRule);
-        final boolean rootOk = BlacklistHelper.addBlacklistEntry(DOMAIN_FOR_SALE_BLACKLIST, rootBlacklistRule);
-        final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(DOMAIN_FOR_SALE_BLACKLIST, subdomainBlacklistRule);
+        final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule);
+        final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule);
+        if (rootOk || subdomainOk) {
+            ListManager.updateListSet(BlacklistType.CRAWLER + ".BlackLists", blacklistName);
+        }
         SearchEventCache.cleanupEvents(true);
 
         return new DeadDomainCleanupResult(
@@ -3986,6 +4093,29 @@ public final class Switchboard extends serverSwitch {
         private String summary() {
             return "Targeted " + this.targetedHosts + " host name(s); added " + this.rulesAdded + " blacklist rule(s)"
                     + (this.rulesAlreadyPresent > 0 ? "; " + this.rulesAlreadyPresent + " already present" : "")
+                    + (this.rulesFailed > 0 ? "; " + this.rulesFailed + " failed" : "")
+                    + ".";
+        }
+    }
+
+    private static final class AbandonedHostCleanupResult {
+        private final int removedRecords;
+        private final boolean ruleAdded;
+        private final boolean ruleAlreadyPresent;
+        private final int rulesFailed;
+
+        private AbandonedHostCleanupResult(final int removedRecords, final boolean ruleAdded,
+                final boolean ruleAlreadyPresent, final int rulesFailed) {
+            this.removedRecords = removedRecords;
+            this.ruleAdded = ruleAdded;
+            this.ruleAlreadyPresent = ruleAlreadyPresent;
+            this.rulesFailed = rulesFailed;
+        }
+
+        private String summary() {
+            return "Removed " + this.removedRecords + " indexed record(s); "
+                    + (this.ruleAdded ? "added 1 blacklist rule" : "added 0 blacklist rules")
+                    + (this.ruleAlreadyPresent ? "; rule already present" : "")
                     + (this.rulesFailed > 0 ? "; " + this.rulesFailed + " failed" : "")
                     + ".";
         }

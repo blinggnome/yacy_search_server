@@ -779,7 +779,10 @@ public class CrawlQueues {
                                 if (CrawlQueues.log.isFine()) {
                                     CrawlQueues.log.fine("problem loading " + this.request.url().toString() + ": " + e.getMessage());
                                 }
-                                error = "load error - " + e.getMessage();
+                                error = CrawlQueues.this.sb.crawlerAbandonedDomainAction(
+                                        this.request.url(),
+                                        e,
+                                        "load error - " + e.getMessage());
                             }
 
                             if (error != null) {
