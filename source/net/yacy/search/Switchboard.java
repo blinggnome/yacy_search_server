@@ -1883,14 +1883,15 @@ public final class Switchboard extends serverSwitch {
         if (url == null || displayAction == null || displayAction.length() == 0) {
             return;
         }
-        final boolean audit = auditAction != null && auditAction.length() > 0;
+        final String safeCleanupBlacklist = crawlerRuleCleanupBlacklist(cleanupBlacklist);
+        final boolean audit = auditAction != null && auditAction.length() > 0 && safeCleanupBlacklist.length() > 0;
         final String safeAuditAction = audit ? auditAction : displayAction;
         final CrawlerRuleAction crawlerRuleAction = new CrawlerRuleAction(
                 System.currentTimeMillis(),
                 url.toNormalform(true),
                 limitCrawlerRuleAction(displayAction),
                 normalizedCleanupDomain(cleanupDomain, url, safeAuditAction),
-                crawlerRuleCleanupBlacklist(cleanupBlacklist),
+                safeCleanupBlacklist,
                 manualCleanupAvailable);
         synchronized (this.crawlerRuleActions) {
             this.crawlerRuleActions.addFirst(crawlerRuleAction);
@@ -1913,6 +1914,29 @@ public final class Switchboard extends serverSwitch {
         return action.length() > CRAWLER_RULE_ACTION_TEXT_LIMIT
                 ? action.substring(0, CRAWLER_RULE_ACTION_TEXT_LIMIT)
                 : action;
+    }
+
+    public static String crawlerRuleActionDisplayText(final String action) {
+        if (action == null || action.length() == 0) {
+            return "";
+        }
+        final int matchLocation = action.indexOf(" matched in ");
+        if (matchLocation < 0) {
+            return action;
+        }
+        final int excerptStart = action.indexOf(": \"", matchLocation);
+        if (excerptStart < 0) {
+            return action;
+        }
+        final int contentStart = excerptStart + 3;
+        int excerptEnd = Math.max(action.lastIndexOf("\". "), action.lastIndexOf("\"; "));
+        if (excerptEnd < contentStart && action.endsWith("\"")) {
+            excerptEnd = action.length() - 1;
+        }
+        if (excerptEnd < contentStart) {
+            return action;
+        }
+        return action.substring(0, excerptStart) + action.substring(excerptEnd + 1);
     }
 
     private void appendCrawlerRuleActionLog(final CrawlerRuleAction action) {
@@ -2053,6 +2077,7 @@ public final class Switchboard extends serverSwitch {
                     final String action = fields[3];
                     final String cleanupBlacklist = fields.length > 4 ? crawlerRuleCleanupBlacklist(fields[4])
                             : crawlerRuleCleanupBlacklistFromAction(action);
+                    if (cleanupBlacklist.length() == 0) continue;
                     final String cleanupDomain = normalizedCleanupDomain(fields[2]).length() > 0
                             ? normalizedCleanupDomain(fields[2])
                             : crawlerRuleCleanupDomainFromAction(action, cleanupBlacklist);
@@ -3940,6 +3965,13 @@ public final class Switchboard extends serverSwitch {
         return removeExistingIndexDocument(url, reason);
     }
 
+    private static String crawlerRuleDisplaySummary(final CrawlerContentRejection.RuleMatch match) {
+        if (match == null) {
+            return "";
+        }
+        return "rule '" + match.rule + "' matched in " + match.location;
+    }
+
     private String crawlerSourceRejection(final Response response) {
         final CrawlerContentRejection.RuleMatch poisonPillMatch = this.crawlerContentRejection.firstPoisonPillMatch(
                 response.getContent(),
@@ -3947,12 +3979,12 @@ public final class Switchboard extends serverSwitch {
         if (poisonPillMatch != null) {
             if (isCrawlerPoisonPillWhitelisted(response.url())) {
                 recordCrawlerRuleAction(response.url(), "Poison pill skipped for whitelisted host before parsing: "
-                        + poisonPillMatch.shortSummary(), "Poison pill skipped for whitelisted host before parsing: "
+                        + crawlerRuleDisplaySummary(poisonPillMatch), "Poison pill skipped for whitelisted host before parsing: "
                         + poisonPillMatch.summary());
             } else {
                 final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(response.url(), poisonPillMatch.rule, "crawler source poison pill");
                 recordCrawlerRuleAction(response.url(), "Poison pill matched before parsing: "
-                        + poisonPillMatch.shortSummary() + ". " + cleanup.summary(), "Poison pill matched before parsing: "
+                        + crawlerRuleDisplaySummary(poisonPillMatch) + ". " + cleanup.summary(), "Poison pill matched before parsing: "
                         + poisonPillMatch.summary() + ". " + cleanup.summary(), cleanup.host, POISON_PILL_BLACKLIST);
                 return "Not Parsed Resource '" + response.url().toNormalform(true)
                         + "': rejected by crawler source poison pill '" + poisonPillMatch.rule + "'";
@@ -3969,7 +4001,7 @@ public final class Switchboard extends serverSwitch {
 
         final int removed = removeRejectedIndexDocuments(response.url(), "crawler source rule '" + crawlerSourceRejectionRule + "'");
         recordCrawlerRuleAction(response.url(), "Rejected before parsing by crawler source "
-                + crawlerSourceRejectionMatch.shortSummary() + removalSummary(removed), "Rejected before parsing by crawler source "
+                + crawlerRuleDisplaySummary(crawlerSourceRejectionMatch) + removalSummary(removed), "Rejected before parsing by crawler source "
                 + crawlerSourceRejectionMatch.summary() + removalSummary(removed));
         return "Not Parsed Resource '" + response.url().toNormalform(true)
                 + "': rejected by crawler source rule '" + crawlerSourceRejectionRule + "'";
@@ -3981,12 +4013,12 @@ public final class Switchboard extends serverSwitch {
         if (poisonPillMatch != null) {
             if (isCrawlerPoisonPillWhitelisted(url)) {
                 recordCrawlerRuleAction(url, "Poison pill skipped for whitelisted host at " + actionContext + ": "
-                        + poisonPillMatch.shortSummary(), "Poison pill skipped for whitelisted host at " + actionContext + ": "
+                        + crawlerRuleDisplaySummary(poisonPillMatch), "Poison pill skipped for whitelisted host at " + actionContext + ": "
                         + poisonPillMatch.summary());
             } else {
                 final PoisonPillCleanupResult cleanup = cleanupPoisonPillHost(url, poisonPillMatch.rule, "crawler content poison pill");
                 recordCrawlerRuleAction(url, "Poison pill matched at " + actionContext + ": "
-                        + poisonPillMatch.shortSummary() + ". " + cleanup.summary(), "Poison pill matched at " + actionContext + ": "
+                        + crawlerRuleDisplaySummary(poisonPillMatch) + ". " + cleanup.summary(), "Poison pill matched at " + actionContext + ": "
                         + poisonPillMatch.summary() + ". " + cleanup.summary(), cleanup.host, POISON_PILL_BLACKLIST);
                 return infoPrefix + ": rejected by crawler content poison pill '" + poisonPillMatch.rule + "'";
             }
@@ -4000,7 +4032,7 @@ public final class Switchboard extends serverSwitch {
         final String crawlerContentRejectionRule = crawlerContentRejectionMatch.rule;
         final int removed = removeRejectedIndexDocuments(url, "crawler content rule '" + crawlerContentRejectionRule + "'");
         recordCrawlerRuleAction(url, "Rejected " + actionContext + " by crawler content "
-                + crawlerContentRejectionMatch.shortSummary() + removalSummary(removed), "Rejected " + actionContext + " by crawler content "
+                + crawlerRuleDisplaySummary(crawlerContentRejectionMatch) + removalSummary(removed), "Rejected " + actionContext + " by crawler content "
                 + crawlerContentRejectionMatch.summary() + removalSummary(removed));
         return infoPrefix + ": rejected by crawler content rule '" + crawlerContentRejectionRule + "'";
     }

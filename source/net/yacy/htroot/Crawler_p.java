@@ -965,7 +965,7 @@ public class Crawler_p {
             prop.put("crawlerRuleActions_list_" + count + "_dark", dark ? 1 : 0);
             prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putHTML("crawlerRuleActions_list_" + count + "_url", action.url);
-            prop.putHTML("crawlerRuleActions_list_" + count + "_action", action.action);
+            prop.putHTML("crawlerRuleActions_list_" + count + "_action", Switchboard.crawlerRuleActionDisplayText(action.action));
             prop.put("crawlerRuleActions_list_" + count + "_cleanup",
                     !deadDomainAutoCleanup && action.manualCleanupAvailable && action.cleanupDomain.length() > 0 ? 1 : 0);
             prop.putHTML("crawlerRuleActions_list_" + count + "_cleanup_domain", action.cleanupDomain);
@@ -986,7 +986,7 @@ public class Crawler_p {
             prop.put("crawlerRuleActionLog_list_" + count + "_dark", dark ? 1 : 0);
             prop.put("crawlerRuleActionLog_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putHTML("crawlerRuleActionLog_list_" + count + "_url", action.url);
-            prop.putHTML("crawlerRuleActionLog_list_" + count + "_action", action.action);
+            prop.putHTML("crawlerRuleActionLog_list_" + count + "_action", Switchboard.crawlerRuleActionDisplayText(action.action));
             prop.putHTML("crawlerRuleActionLog_list_" + count + "_cleanup_domain", action.cleanupDomain);
             prop.put("crawlerRuleActionLog_list_" + count + "_restore", auditBlacklistName.length() == 0 ? 0 : 1);
             prop.putHTML("crawlerRuleActionLog_list_" + count + "_restore_domain", action.cleanupDomain);

@@ -146,7 +146,7 @@ public class status_p {
                     : "";
             prop.put("crawlerRuleActions_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putXML("crawlerRuleActions_list_" + count + "_url", action.url);
-            prop.putXML("crawlerRuleActions_list_" + count + "_action", action.action);
+            prop.putXML("crawlerRuleActions_list_" + count + "_action", Switchboard.crawlerRuleActionDisplayText(action.action));
             prop.putXML("crawlerRuleActions_list_" + count + "_cleanupDomain", cleanupDomain);
             count++;
         }
@@ -158,7 +158,7 @@ public class status_p {
         for (final Switchboard.CrawlerRuleAction action : sb.crawlerRuleActionLog()) {
             prop.put("crawlerRuleActionLog_list_" + count + "_time", Long.toString(action.timestamp));
             prop.putXML("crawlerRuleActionLog_list_" + count + "_url", action.url);
-            prop.putXML("crawlerRuleActionLog_list_" + count + "_action", action.action);
+            prop.putXML("crawlerRuleActionLog_list_" + count + "_action", Switchboard.crawlerRuleActionDisplayText(action.action));
             prop.putXML("crawlerRuleActionLog_list_" + count + "_restoreDomain", action.cleanupDomain);
             prop.putXML("crawlerRuleActionLog_list_" + count + "_restoreBlacklist", action.cleanupBlacklist);
             count++;
