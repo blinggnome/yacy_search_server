@@ -117,6 +117,25 @@ public class SearchEventCache {
         }
     }
 
+    public static boolean hasRecentOrFeedingEvents(final long recentMillis) {
+        cleanupEvents(false);
+        final long now = System.currentTimeMillis();
+        synchronized (lastEvents) {
+            for (final SearchEvent event: lastEvents.values()) {
+                if (event == null) {
+                    continue;
+                }
+                if (!event.isFeedingFinished()) {
+                    return true;
+                }
+                if (recentMillis > 0 && event.getEventTime() + recentMillis > now) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public static SearchEvent getEvent(final String eventID) {
         SearchEvent event = lastEvents.get(eventID);
         if (event == null) {
@@ -127,6 +146,9 @@ public class SearchEventCache {
             cacheMiss++;
         } else {
             cacheHit++;
+        }
+        if (event != null) {
+            event.resetEventTime();
         }
         return event;
     }

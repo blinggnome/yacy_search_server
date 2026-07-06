@@ -346,6 +346,8 @@ public final class Switchboard extends serverSwitch {
     private static final int CRAWLER_RULE_ACTION_LOG_FILE_LIMIT = 10000;
     private static final int CRAWLER_RULE_ACTION_TEXT_LIMIT = 1200;
     private static final String CRAWLER_RULE_ACTION_LOG = "DATA/LOG/crawler-rule-actions.log";
+    private static final long CRAWLER_INDEX_CLEANUP_SEARCH_GRACE_MS = 45000L;
+    private static final long CRAWLER_INDEX_CLEANUP_RETRY_MS = 5000L;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_TIMEOUT_MS = 5000;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_BYTES = 256 * 1024;
     private static final int ZERO_CONTENT_REDIRECT_FETCH_MAX_HTTP_REDIRECTS = 3;
@@ -366,6 +368,9 @@ public final class Switchboard extends serverSwitch {
             "afternic"
     };
     private final Deque<CrawlerRuleAction> crawlerRuleActions = new ArrayDeque<>();
+    private final Deque<DeferredCrawlerIndexCleanup> deferredCrawlerIndexCleanups = new ArrayDeque<>();
+    private final Object deferredCrawlerIndexCleanupLock = new Object();
+    private volatile boolean deferredCrawlerIndexCleanupWorkerRunning = false;
 
     public Switchboard(final File dataPath, final File appPath, final String initPath, final String configPath) {
         super(dataPath, appPath, initPath, configPath);
@@ -1856,6 +1861,20 @@ public final class Switchboard extends serverSwitch {
         }
     }
 
+    private interface CrawlerIndexCleanup {
+        void run() throws IOException;
+    }
+
+    private static final class DeferredCrawlerIndexCleanup {
+        private final String description;
+        private final CrawlerIndexCleanup cleanup;
+
+        private DeferredCrawlerIndexCleanup(final String description, final CrawlerIndexCleanup cleanup) {
+            this.description = description;
+            this.cleanup = cleanup;
+        }
+    }
+
     public void recordCrawlerRuleAction(final DigestURL url, final String action) {
         recordCrawlerRuleAction(url, action, action);
     }
@@ -3163,7 +3182,12 @@ public final class Switchboard extends serverSwitch {
 
                 if (allCrawlsFinished) {
                     // refresh the search cache
-                    SearchEventCache.cleanupEvents(true);
+                    if (SearchEventCache.hasRecentOrFeedingEvents(CRAWLER_INDEX_CLEANUP_SEARCH_GRACE_MS)) {
+                        SearchEventCache.cleanupEvents(false);
+                        this.log.info("Skipped forced search event cache cleanup after crawl completion while search results are actively rendering");
+                    } else {
+                        SearchEventCache.cleanupEvents(true);
+                    }
                     sb.index.clearCaches(); // every time the ranking is changed we need to remove old orderings
 
                     if (postprocessing) {
@@ -4051,6 +4075,76 @@ public final class Switchboard extends serverSwitch {
         return url != null && this.crawlerContentRejection != null && this.crawlerContentRejection.isWhitelisted(url.getHost());
     }
 
+    private boolean runOrDeferCrawlerIndexCleanup(final String description, final CrawlerIndexCleanup cleanup) throws IOException {
+        if (SearchEventCache.hasRecentOrFeedingEvents(CRAWLER_INDEX_CLEANUP_SEARCH_GRACE_MS)) {
+            enqueueDeferredCrawlerIndexCleanup(description, cleanup);
+            return true;
+        }
+        cleanup.run();
+        cleanupSearchEventsAfterCrawlerCleanup();
+        return false;
+    }
+
+    private void enqueueDeferredCrawlerIndexCleanup(final String description, final CrawlerIndexCleanup cleanup) {
+        synchronized (this.deferredCrawlerIndexCleanupLock) {
+            this.deferredCrawlerIndexCleanups.addLast(new DeferredCrawlerIndexCleanup(description, cleanup));
+            if (this.deferredCrawlerIndexCleanupWorkerRunning) {
+                return;
+            }
+            this.deferredCrawlerIndexCleanupWorkerRunning = true;
+        }
+
+        final Thread worker = new Thread("Switchboard.deferredCrawlerIndexCleanup") {
+            @Override
+            public void run() {
+                Switchboard.this.runDeferredCrawlerIndexCleanups();
+            }
+        };
+        worker.setDaemon(true);
+        worker.start();
+        this.log.info("Deferred crawler index cleanup '" + description + "' until active search events finish");
+    }
+
+    private void runDeferredCrawlerIndexCleanups() {
+        while (true) {
+            if (SearchEventCache.hasRecentOrFeedingEvents(CRAWLER_INDEX_CLEANUP_SEARCH_GRACE_MS)) {
+                try {
+                    Thread.sleep(CRAWLER_INDEX_CLEANUP_RETRY_MS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    synchronized (this.deferredCrawlerIndexCleanupLock) {
+                        this.deferredCrawlerIndexCleanupWorkerRunning = false;
+                    }
+                    return;
+                }
+                continue;
+            }
+
+            final DeferredCrawlerIndexCleanup deferredCleanup;
+            synchronized (this.deferredCrawlerIndexCleanupLock) {
+                deferredCleanup = this.deferredCrawlerIndexCleanups.pollFirst();
+                if (deferredCleanup == null) {
+                    this.deferredCrawlerIndexCleanupWorkerRunning = false;
+                    return;
+                }
+            }
+
+            try {
+                deferredCleanup.cleanup.run();
+                cleanupSearchEventsAfterCrawlerCleanup();
+                this.log.info("Applied deferred crawler index cleanup '" + deferredCleanup.description + "'");
+            } catch (final IOException | RuntimeException e) {
+                this.log.warn("Deferred crawler index cleanup '" + deferredCleanup.description + "' failed: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void cleanupSearchEventsAfterCrawlerCleanup() {
+        // Do not force-clear live search events: the JS resort page depends on
+        // those events while it fetches result rows asynchronously.
+        SearchEventCache.cleanupEvents(false);
+    }
+
     private PoisonPillCleanupResult cleanupPoisonPillHost(final DigestURL url, final String poisonPillRule, final String reason) {
         if (url == null || this.index == null || this.index.fulltext().getDefaultConnector() == null) {
             return new PoisonPillCleanupResult("", 0, false, false, "no URL or index available");
@@ -4069,14 +4163,19 @@ public final class Switchboard extends serverSwitch {
         }
 
         try {
-            this.index.fulltext().deleteStaleDomainNames(new HashSet<String>(Collections.singleton(host)), null);
-            try {
-                this.index.loadTimeIndex().clear();
-            } catch (final IOException e) {
-                ConcurrentLog.warn("Switchboard", "Could not clear load-time index after poison-pill cleanup", e);
-            }
-            this.index.fulltext().commit(true);
-        } catch (final RuntimeException e) {
+            runOrDeferCrawlerIndexCleanup("poison-pill host '" + host + "'", new CrawlerIndexCleanup() {
+                @Override
+                public void run() {
+                    Switchboard.this.index.fulltext().deleteStaleDomainNames(new HashSet<String>(Collections.singleton(host)), null);
+                    try {
+                        Switchboard.this.index.loadTimeIndex().clear();
+                    } catch (final IOException e) {
+                        ConcurrentLog.warn("Switchboard", "Could not clear load-time index after poison-pill cleanup", e);
+                    }
+                    Switchboard.this.index.fulltext().commit(true);
+                }
+            });
+        } catch (final IOException | RuntimeException e) {
             this.log.warn("Could not remove poison-pill host records for '" + host + "': " + e.getMessage());
             return new PoisonPillCleanupResult(host, indexedRecords, false, false, "index cleanup failed: " + e.getMessage());
         }
@@ -4084,11 +4183,10 @@ public final class Switchboard extends serverSwitch {
         final String blacklistRule = BlacklistHelper.prepareEntry(host + "/.*");
         final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(POISON_PILL_BLACKLIST)));
         final boolean alreadyPresent = existingBlacklistEntries.contains(blacklistRule);
-        final boolean blacklistOk = BlacklistHelper.addBlacklistEntry(POISON_PILL_BLACKLIST, blacklistRule);
+        final boolean blacklistOk = BlacklistHelper.addBlacklistEntry(POISON_PILL_BLACKLIST, blacklistRule, false);
         if (blacklistOk) {
             ListManager.updateListSet(BlacklistType.CRAWLER + ".BlackLists", POISON_PILL_BLACKLIST);
         }
-        SearchEventCache.cleanupEvents(true);
         this.log.info("Poison pill '" + poisonPillRule + "' matched " + url.toNormalform(true)
                 + "; removed " + indexedRecords + " indexed record(s) for host '" + host + "': " + reason);
         return new PoisonPillCleanupResult(host, indexedRecords, blacklistOk && !alreadyPresent, alreadyPresent,
@@ -4106,8 +4204,16 @@ public final class Switchboard extends serverSwitch {
             if (existing == null) {
                 return 0;
             }
-            this.index.fulltext().remove(url.hash());
-            this.log.info("Removed previously indexed resource '" + url.toNormalform(true) + "': " + reason);
+            final byte[] urlHash = url.hash();
+            final String normalform = url.toNormalform(true);
+            final boolean deferred = runOrDeferCrawlerIndexCleanup("indexed resource '" + normalform + "'", new CrawlerIndexCleanup() {
+                @Override
+                public void run() {
+                    Switchboard.this.index.fulltext().remove(urlHash);
+                }
+            });
+            this.log.info((deferred ? "Deferred removal of" : "Removed")
+                    + " previously indexed resource '" + normalform + "': " + reason);
             return 1;
         } catch (final IOException e) {
             this.log.warn("Failed to check existing indexed resource '" + url.toNormalform(true) + "' before removal: " + e.getMessage());
@@ -4175,8 +4281,20 @@ public final class Switchboard extends serverSwitch {
         }
 
         if (!deleteIds.isEmpty()) {
-            this.index.fulltext().remove(deleteIds);
-            this.log.info("Removed " + deleteIds.size() + " YouTube index record(s) for " + canonicalUrl + ": " + reason);
+            final Collection<String> deleteIdsCopy = new ArrayList<>(deleteIds);
+            try {
+                final boolean deferred = runOrDeferCrawlerIndexCleanup("YouTube index records for " + canonicalUrl, new CrawlerIndexCleanup() {
+                    @Override
+                    public void run() {
+                        Switchboard.this.index.fulltext().remove(deleteIdsCopy);
+                    }
+                });
+                this.log.info((deferred ? "Deferred removal of " : "Removed ")
+                        + deleteIds.size() + " YouTube index record(s) for " + canonicalUrl + ": " + reason);
+            } catch (final IOException e) {
+                this.log.warn("Failed to remove YouTube index record(s) for " + canonicalUrl + ": " + e.getMessage());
+                return 0;
+            }
         }
         return deleteIds.size();
     }
@@ -4292,23 +4410,26 @@ public final class Switchboard extends serverSwitch {
             this.log.warn("Could not count indexed abandoned host records for '" + cleanupHost + "': " + e.getMessage());
         }
 
-        this.index.fulltext().deleteStaleDomainNames(new HashSet<String>(Collections.singleton(cleanupHost)), null);
-        try {
-            this.index.loadTimeIndex().clear();
-        } catch (final IOException e) {
-            ConcurrentLog.warn("Switchboard", "Could not clear load-time index after abandoned-host cleanup", e);
-        }
-        this.index.fulltext().commit(true);
+        runOrDeferCrawlerIndexCleanup("abandoned host '" + cleanupHost + "'", new CrawlerIndexCleanup() {
+            @Override
+            public void run() {
+                Switchboard.this.index.fulltext().deleteStaleDomainNames(new HashSet<String>(Collections.singleton(cleanupHost)), null);
+                try {
+                    Switchboard.this.index.loadTimeIndex().clear();
+                } catch (final IOException e) {
+                    ConcurrentLog.warn("Switchboard", "Could not clear load-time index after abandoned-host cleanup", e);
+                }
+                Switchboard.this.index.fulltext().commit(true);
+            }
+        });
 
         final String blacklistRule = BlacklistHelper.prepareEntry(cleanupHost + "/.*");
         final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(DOMAIN_ABANDONED_BLACKLIST)));
         final boolean alreadyPresent = existingBlacklistEntries.contains(blacklistRule);
-        final boolean blacklistOk = BlacklistHelper.addBlacklistEntry(DOMAIN_ABANDONED_BLACKLIST, blacklistRule);
+        final boolean blacklistOk = BlacklistHelper.addBlacklistEntry(DOMAIN_ABANDONED_BLACKLIST, blacklistRule, false);
         if (blacklistOk) {
             ListManager.updateListSet(BlacklistType.CRAWLER + ".BlackLists", DOMAIN_ABANDONED_BLACKLIST);
         }
-        SearchEventCache.cleanupEvents(true);
-
         return new AbandonedHostCleanupResult(indexedRecords, blacklistOk && !alreadyPresent, alreadyPresent, blacklistOk ? 0 : 1);
     }
 
@@ -4320,26 +4441,30 @@ public final class Switchboard extends serverSwitch {
         final Set<String> hostnames = indexedHostsForDomain(cleanupDomain);
         hostnames.add(cleanupDomain);
         hostnames.add("www." + cleanupDomain);
-        this.index.fulltext().deleteStaleDomainNames(hostnames, null);
-        try {
-            this.index.loadTimeIndex().clear();
-        } catch (final IOException e) {
-            ConcurrentLog.warn("Switchboard", "Could not clear load-time index after dead-domain cleanup", e);
-        }
-        this.index.fulltext().commit(true);
+        final Set<String> cleanupHostnames = new HashSet<>(hostnames);
+        runOrDeferCrawlerIndexCleanup("dead/domain-for-sale domain '" + cleanupDomain + "'", new CrawlerIndexCleanup() {
+            @Override
+            public void run() {
+                Switchboard.this.index.fulltext().deleteStaleDomainNames(cleanupHostnames, null);
+                try {
+                    Switchboard.this.index.loadTimeIndex().clear();
+                } catch (final IOException e) {
+                    ConcurrentLog.warn("Switchboard", "Could not clear load-time index after dead-domain cleanup", e);
+                }
+                Switchboard.this.index.fulltext().commit(true);
+            }
+        });
 
         final String rootBlacklistRule = BlacklistHelper.prepareEntry(cleanupDomain + "/.*");
         final String subdomainBlacklistRule = BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*");
         final Set<String> existingBlacklistEntries = new HashSet<>(Arrays.asList(BlacklistHelper.blacklistToSortedArray(blacklistName)));
         final boolean rootAlreadyPresent = existingBlacklistEntries.contains(rootBlacklistRule);
         final boolean subdomainAlreadyPresent = existingBlacklistEntries.contains(subdomainBlacklistRule);
-        final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule);
-        final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule);
+        final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule, false);
+        final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule, false);
         if (rootOk || subdomainOk) {
             ListManager.updateListSet(BlacklistType.CRAWLER + ".BlackLists", blacklistName);
         }
-        SearchEventCache.cleanupEvents(true);
-
         return new DeadDomainCleanupResult(
                 hostnames.size(),
                 (rootOk && !rootAlreadyPresent ? 1 : 0) + (subdomainOk && !subdomainAlreadyPresent ? 1 : 0),

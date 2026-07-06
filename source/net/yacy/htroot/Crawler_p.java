@@ -146,12 +146,12 @@ public class Crawler_p {
                     final String subdomainBlacklistRule = BlacklistHelper.prepareEntry("*." + cleanupDomain + "/.*");
                     final boolean rootAlreadyPresent = existingBlacklistEntries.contains(rootBlacklistRule);
                     final boolean subdomainAlreadyPresent = existingBlacklistEntries.contains(subdomainBlacklistRule);
-                    final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule);
-                    final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule);
+                    final boolean rootOk = BlacklistHelper.addBlacklistEntry(blacklistName, rootBlacklistRule, false);
+                    final boolean subdomainOk = BlacklistHelper.addBlacklistEntry(blacklistName, subdomainBlacklistRule, false);
                     final int blacklistRulesAlreadyPresent = (rootAlreadyPresent ? 1 : 0) + (subdomainAlreadyPresent ? 1 : 0);
                     final int blacklistRulesAdded = (rootOk && !rootAlreadyPresent ? 1 : 0) + (subdomainOk && !subdomainAlreadyPresent ? 1 : 0);
                     final int blacklistRulesFailed = (rootOk ? 0 : 1) + (subdomainOk ? 0 : 1);
-                    SearchEventCache.cleanupEvents(true);
+                    SearchEventCache.cleanupEvents(false);
                     sb.tables.recordAPICall(post, "Crawler_p.html", WorkTables.TABLE_API_TYPE_STEERING,
                             "purge and blacklist parked domain " + cleanupDomain);
                     prop.put("crawlerRuleActions_cleanupResult", 1);
@@ -191,15 +191,15 @@ public class Crawler_p {
                         missing++;
                         continue;
                     }
-                    errorLocation = BlacklistHelper.deleteBlacklistEntry(blacklistName, blacklistRule, header);
+                    errorLocation = BlacklistHelper.deleteBlacklistEntry(blacklistName, blacklistRule, header, false);
                     if (errorLocation != null) {
                         break;
                     }
                     removed++;
                 }
                 Switchboard.urlBlacklist.clear();
-                ListManager.reloadBlacklists();
-                SearchEventCache.cleanupEvents(true);
+                ListManager.reloadBlacklists(false);
+                SearchEventCache.cleanupEvents(false);
                 sb.tables.recordAPICall(post, "Crawler_p.html", WorkTables.TABLE_API_TYPE_STEERING,
                         "remove crawler rule audit blacklist entries from " + blacklistName + " for " + cleanupDomain);
                 prop.put("crawlerRuleActions_cleanupResult", 1);

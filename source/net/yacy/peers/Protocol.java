@@ -1362,6 +1362,7 @@ public final class Protocol {
         }
 
         List<URIMetadataNode> resultContainer = new ArrayList<URIMetadataNode>();
+        List<URIMetadataNode> rejectedContainer = new ArrayList<URIMetadataNode>();
         Network.log.info("SEARCH (solr), returned " + docList[0].size() + " out of " + docList[0].getNumFound() + " documents and " + facets.size() + " facets " + facets.keySet().toString() + " from " + (target == null ? "shard" : ("peer " + target.hash + ":" + target.getName())));
         int term = count;
         Collection<SolrInputDocument> docs;
@@ -1392,6 +1393,7 @@ public final class Protocol {
                         Network.log.info("remote search (solr): filtered blacklisted url " + urlEntry.url().toNormalform(true) + " from " + (target == null ? "shard" : ("peer " + target.hash + ":" + target.getName())));
                     }
                 }
+                rejectedContainer.add(urlEntry);
                 continue; // block with blacklist
             }
 
@@ -1404,6 +1406,7 @@ public final class Protocol {
                         Network.log.info("remote search (solr): rejected url '" + urlEntry.url().toNormalform(true) + "' (" + urlRejectReason + ") from peer " + target.getName());
                     }
                 }
+                rejectedContainer.add(urlEntry);
                 continue; // reject url outside of our domain
             }
 
@@ -1445,6 +1448,7 @@ public final class Protocol {
         docList[0] = null;
         if (localsearch) {
             event.addNodes(resultContainer, facets, snippets, true, "localpeer", numFound, incrementNavigators);
+            event.evictSolrEntries(rejectedContainer, facets, true, incrementNavigators);
             event.addFinalize();
             event.addExpectedRemoteReferences(-count);
             Network.log.info("local search (solr): localpeer sent " + resultContainer.size() + "/" + numFound + " references");
@@ -1461,6 +1465,7 @@ public final class Protocol {
                 writeToLocalIndexThread.start();
             }
             event.addNodes(resultContainer, facets, snippets, false, target.getName() + "/" + target.hash, numFound, incrementNavigators);
+            event.evictSolrEntries(rejectedContainer, facets, false, incrementNavigators);
             event.addFinalize();
             event.addExpectedRemoteReferences(-count);
             Network.log.info("remote search (solr): peer " + target.getName() + " sent " + (resultContainer.size()) + "/" + numFound + " references");

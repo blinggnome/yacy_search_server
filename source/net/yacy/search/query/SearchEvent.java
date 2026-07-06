@@ -300,6 +300,12 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         return this.navGeneration.get();
     }
 
+    private boolean hasPendingLocalSolrPage() {
+        return this.remote &&
+                this.local_solr_stored.get() > this.localsolroffset &&
+                !Switchboard.getSwitchboard().getConfigBool(SwitchboardConstants.DEBUG_SEARCH_LOCAL_SOLR_OFF, false);
+    }
+
     /**
      * Set maximum size allowed (in kbytes) for a remote document result to be stored to local index.
      * @param maxSize document content max size in kbytes. Zero or negative value means no limit.
@@ -1801,6 +1807,17 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         }
     }
 
+    public void evictSolrEntries(final Collection<URIMetadataNode> entries,
+            final Map<String, ReversibleScoreMap<String>> facets, final boolean local,
+            final boolean navIncrementedEarlier) {
+        if (entries == null || entries.isEmpty()) {
+            return;
+        }
+        for (final URIMetadataNode entry : entries) {
+            updateCountsOnSolrEntryToEvict(entry, facets, local, navIncrementedEarlier);
+        }
+    }
+
     public long getURLRetrievalTime() {
         return this.urlRetrievalAllTime;
     }
@@ -2220,11 +2237,59 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
         while ( this.resultList.sizeAvailable() <= resultListIndex &&
                 (this.rwiQueueSize() > 0 || this.nodeStack.sizeQueue() > 0 ||
                         (!this.isFeedingFinished() && System.currentTimeMillis() < finishTime))) {
+            if (this.rwiQueueSize() == 0 && this.nodeStack.sizeQueue() == 0 && hasPendingLocalSolrPage()) {
+                break;
+            }
             if (!drainStacksToResult(true)) {
                 try {
                     Thread.sleep(10);
                 } catch (final InterruptedException e) {
                     log.warn("Search results wait was interrupted.");
+                }
+            }
+        }
+
+        while (this.remote &&
+                this.resultList.sizeAvailable() <= resultListIndex &&
+                hasPendingLocalSolrPage() &&
+                System.currentTimeMillis() < finishTime &&
+                !Switchboard.getSwitchboard().getConfigBool(SwitchboardConstants.DEBUG_SEARCH_LOCAL_SOLR_OFF, false)) {
+            if (this.localsolrsearch != null && this.localsolrsearch.isAlive()) {
+                try {
+                    this.localsolrsearch.join(Math.max(1, finishTime - System.currentTimeMillis()));
+                } catch (final InterruptedException e) {
+                    log.warn("Wait for local solr search was interrupted.");
+                    break;
+                }
+            }
+            if (this.localsolrsearch != null && this.localsolrsearch.isAlive()) {
+                break;
+            }
+
+            this.localsolrsearch = RemoteSearch.solrRemoteSearch(this,
+                    this.query.solrQuery(this.query.contentdom, this.query.isStrictContentDom(), false, this.excludeintext_image),
+                    this.localsolroffset, this.query.itemsPerPage, null /* this peer */, 0, Switchboard.urlBlacklist, false, false);
+            this.localsolroffset += this.query.itemsPerPage;
+            if (this.localsolrsearch != null) {
+                try {
+                    this.localsolrsearch.join(Math.max(1, finishTime - System.currentTimeMillis()));
+                } catch (final InterruptedException e) {
+                    log.warn("Wait for local solr search was interrupted.");
+                    break;
+                }
+            }
+            while ( this.resultList.sizeAvailable() <= resultListIndex &&
+                    (this.rwiQueueSize() > 0 || this.nodeStack.sizeQueue() > 0 ||
+                            (!this.isFeedingFinished() && System.currentTimeMillis() < finishTime))) {
+                if (this.rwiQueueSize() == 0 && this.nodeStack.sizeQueue() == 0 && hasPendingLocalSolrPage()) {
+                    break;
+                }
+                if (!drainStacksToResult(true)) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (final InterruptedException e) {
+                        log.warn("Search results wait was interrupted.");
+                    }
                 }
             }
         }

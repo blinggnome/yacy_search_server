@@ -68,6 +68,20 @@ public final class BlacklistHelper {
     public static boolean addBlacklistEntry(
             final String blacklistToUse,
             final String entry) {
+        return addBlacklistEntry(blacklistToUse, entry, true);
+    }
+
+    /**
+     * Adds a new entry to the chosen blacklist.
+     * @param blacklistToUse the name of the blacklist the entry is to be added to
+     * @param entry the entry that is to be added
+     * @param cleanSearchCache when true, forcibly clean active search events after the blacklist update
+     * @return true when no error occurred and the entry was successfully added or exists
+     */
+    public static boolean addBlacklistEntry(
+            final String blacklistToUse,
+            final String entry,
+            final boolean cleanSearchCache) {
         String newEntry = entry;
 
         if (blacklistToUse == null || blacklistToUse.isEmpty() || newEntry == null || newEntry.isEmpty()) {
@@ -93,7 +107,9 @@ public final class BlacklistHelper {
             }
         }
         
-        SearchEventCache.cleanupEvents(true);
+        if (cleanSearchCache) {
+            SearchEventCache.cleanupEvents(true);
+        }
         return success;
     }
 	
@@ -108,6 +124,22 @@ public final class BlacklistHelper {
             final String blacklistToUse,
             final String entry,
             final RequestHeader header) {
+        return deleteBlacklistEntry(blacklistToUse, entry, header, true);
+    }
+
+    /**
+     * Deletes a blacklist entry.
+     * @param blacklistToUse the name of the blacklist the entry is to be deleted from
+     * @param entry the entry that is to be deleted
+     * @param header request header used to build error redirect locations
+     * @param cleanSearchCache when true, forcibly clean active search events after the blacklist update
+     * @return null if no error occurred, else a String to put into LOCATION
+     */
+    public static String deleteBlacklistEntry(
+            final String blacklistToUse,
+            final String entry,
+            final RequestHeader header,
+            final boolean cleanSearchCache) {
     	String oldEntry = entry;
 
     	String location = null;
@@ -140,7 +172,9 @@ public final class BlacklistHelper {
             }
         }
         
-        SearchEventCache.cleanupEvents(true);
+        if (cleanSearchCache) {
+            SearchEventCache.cleanupEvents(true);
+        }
         return null;
     }
 

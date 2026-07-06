@@ -195,6 +195,14 @@ public class ListManager {
      * Load or reload all active Blacklists
      */
     public static void reloadBlacklists(){
+        reloadBlacklists(true);
+    }
+
+    /**
+     * Load or reload all active Blacklists
+     * @param cleanSearchCache when true, forcibly clean active search events after the blacklist reload
+     */
+    public static void reloadBlacklists(final boolean cleanSearchCache){
         final List<BlacklistFile> blacklistFiles = new ArrayList<BlacklistFile>(BlacklistType.values().length);
         for (final BlacklistType supportedBlacklistType : BlacklistType.values()) {
             final BlacklistFile blFile = new BlacklistFile(
@@ -207,7 +215,9 @@ public class ListManager {
         Switchboard.urlBlacklist.loadList(
                 blacklistFiles.toArray(new BlacklistFile[blacklistFiles.size()]),
                 "/");
-        SearchEventCache.cleanupEvents(true);
+        if (cleanSearchCache) {
+            SearchEventCache.cleanupEvents(true);
+        }
 
 //       switchboard.urlBlacklist.clear();
 //       if (f != "") switchboard.urlBlacklist.loadLists("black", f, "/");
