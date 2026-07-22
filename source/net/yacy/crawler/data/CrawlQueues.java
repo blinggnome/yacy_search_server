@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -39,6 +40,7 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.response.QueryResponse;
@@ -75,11 +77,29 @@ public class CrawlQueues {
 
     private final static Request POISON_REQUEST = new Request();
     private final static ConcurrentLog log = new ConcurrentLog("CRAWLER");
+    private final static int REMOTE_CRAWL_MAX_QUEUE_SIZE = 200;
+    private final static int REMOTE_CRAWL_MAX_FETCH_COUNT = 60;
+    private final static int REMOTE_CRAWL_DEFAULT_LOCAL_QUEUE_LIMIT = 20;
+    private final static int REMOTE_CRAWL_DEFAULT_MAX_PROVIDER_ATTEMPTS = 5;
+    private final static long REMOTE_CRAWL_FETCH_MAX_TIME = 10000L;
+    private final static long REMOTE_CRAWL_DEFAULT_PROVIDER_COOLDOWN_MILLIS = 300000L;
+    private final static String REMOTE_CRAWL_LOCAL_QUEUE_LIMIT = "remoteCrawlLoader.localQueueLimit";
+    private final static String REMOTE_CRAWL_MAX_PROVIDER_ATTEMPTS = "remoteCrawlLoader.maxProviderAttempts";
+    private final static String REMOTE_CRAWL_PROVIDER_COOLDOWN_MILLIS = "remoteCrawlLoader.providerCooldownMillis";
 
     private final Switchboard sb;
     private final Loader[] worker;
     private final ArrayBlockingQueue<Request> workerQueue;
     private ArrayList<String> remoteCrawlProviderHashes;
+    private final ConcurrentHashMap<String, Long> remoteCrawlProviderCooldownUntil;
+    private final AtomicLong remoteCrawlLoaderRuns;
+    private final AtomicLong remoteCrawlLoaderSuccesses;
+    private final AtomicLong remoteCrawlLoaderFetchedUrls;
+    private final AtomicLong remoteCrawlLoaderEmptyFeeds;
+    private final AtomicLong remoteCrawlLoaderFailedFeeds;
+    private final AtomicLong remoteCrawlLoaderRejectedUrls;
+    private volatile String remoteCrawlLoaderLastStatus;
+    private volatile long remoteCrawlLoaderLastStatusUTC;
 
     public  NoticedURL noticeURL;
     public  ErrorCache errorURL;
@@ -95,6 +115,15 @@ public class CrawlQueues {
          * will be used to send POISON_REQUEST items consumed by all eventually running workers in the close() function*/
         this.workerQueue = new ArrayBlockingQueue<>(maxWorkers);
         this.remoteCrawlProviderHashes = null;
+        this.remoteCrawlProviderCooldownUntil = new ConcurrentHashMap<>();
+        this.remoteCrawlLoaderRuns = new AtomicLong();
+        this.remoteCrawlLoaderSuccesses = new AtomicLong();
+        this.remoteCrawlLoaderFetchedUrls = new AtomicLong();
+        this.remoteCrawlLoaderEmptyFeeds = new AtomicLong();
+        this.remoteCrawlLoaderFailedFeeds = new AtomicLong();
+        this.remoteCrawlLoaderRejectedUrls = new AtomicLong();
+        this.remoteCrawlLoaderLastStatus = "not yet run";
+        this.remoteCrawlLoaderLastStatusUTC = System.currentTimeMillis();
 
         // start crawling management
         log.config("Starting Crawling Management");
@@ -127,6 +156,7 @@ public class CrawlQueues {
         new ErrorCacheFiller(this.sb, this.errorURL).start();
 
         if (this.remoteCrawlProviderHashes != null) this.remoteCrawlProviderHashes.clear();
+        this.remoteCrawlProviderCooldownUntil.clear();
         this.noticeURL.close();
         this.noticeURL = new NoticedURL(newQueuePath, this.sb.getConfigInt("crawler.onDemandLimit", 1000), this.sb.exceed134217727);
         if (this.delegatedURL != null) this.delegatedURL.clear();
@@ -158,6 +188,7 @@ public class CrawlQueues {
             }
         }
         if (this.delegatedURL != null) this.delegatedURL.clear();
+        this.remoteCrawlProviderCooldownUntil.clear();
     }
 
     public void clear() {
@@ -165,6 +196,7 @@ public class CrawlQueues {
         this.workerQueue.clear();
         for (final Loader w: this.worker) if (w != null) w.interrupt();
         if (this.remoteCrawlProviderHashes != null) this.remoteCrawlProviderHashes.clear();
+        this.remoteCrawlProviderCooldownUntil.clear();
         this.noticeURL.clear();
         if (this.delegatedURL != null) this.delegatedURL.clear();
     }
@@ -442,136 +474,297 @@ public class CrawlQueues {
         return null;
     }
 
+    private int remoteCrawlLocalQueueLimit() {
+        return Math.max(0, this.sb.getConfigInt(REMOTE_CRAWL_LOCAL_QUEUE_LIMIT, REMOTE_CRAWL_DEFAULT_LOCAL_QUEUE_LIMIT));
+    }
+
+    private int remoteCrawlMaxProviderAttempts() {
+        return Math.max(1, this.sb.getConfigInt(REMOTE_CRAWL_MAX_PROVIDER_ATTEMPTS, REMOTE_CRAWL_DEFAULT_MAX_PROVIDER_ATTEMPTS));
+    }
+
+    private long remoteCrawlProviderCooldownMillis() {
+        return Math.max(0L, this.sb.getConfigLong(REMOTE_CRAWL_PROVIDER_COOLDOWN_MILLIS, REMOTE_CRAWL_DEFAULT_PROVIDER_COOLDOWN_MILLIS));
+    }
+
+    private void remoteCrawlLoaderStatus(final String status) {
+        this.remoteCrawlLoaderLastStatus = status;
+        this.remoteCrawlLoaderLastStatusUTC = System.currentTimeMillis();
+    }
+
+    private void remoteCrawlLoaderFine(final String status) {
+        this.remoteCrawlLoaderStatus(status);
+        if (CrawlQueues.log.isFine()) {
+            CrawlQueues.log.fine("remoteCrawlLoaderJob: " + status);
+        }
+    }
+
+    private boolean isRemoteCrawlProviderOnCooldown(final String hash, final long now) {
+        if (hash == null) {
+            return false;
+        }
+        final Long cooldownUntil = this.remoteCrawlProviderCooldownUntil.get(hash);
+        if (cooldownUntil == null) {
+            return false;
+        }
+        if (cooldownUntil.longValue() <= now) {
+            this.remoteCrawlProviderCooldownUntil.remove(hash, cooldownUntil);
+            return false;
+        }
+        return true;
+    }
+
+    private void cooldownRemoteCrawlProvider(final String hash, final long now) {
+        if (hash == null) {
+            return;
+        }
+        final long cooldown = this.remoteCrawlProviderCooldownMillis();
+        if (cooldown <= 0) {
+            this.remoteCrawlProviderCooldownUntil.remove(hash);
+            return;
+        }
+        this.remoteCrawlProviderCooldownUntil.put(hash, Long.valueOf(now + cooldown));
+    }
+
+    private int remoteCrawlProviderCooldownCount(final long now) {
+        int count = 0;
+        for (final Map.Entry<String, Long> entry: this.remoteCrawlProviderCooldownUntil.entrySet()) {
+            final Long cooldownUntil = entry.getValue();
+            if (cooldownUntil == null || cooldownUntil.longValue() <= now) {
+                this.remoteCrawlProviderCooldownUntil.remove(entry.getKey(), cooldownUntil);
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    private void refillRemoteCrawlProviderHashes(final long now) {
+        if (this.remoteCrawlProviderHashes == null || !this.remoteCrawlProviderHashes.isEmpty()) {
+            return;
+        }
+        if (this.sb.peers != null && this.sb.peers.sizeConnected() > 0) {
+            final Iterator<Seed> e = DHTSelection.getProvidesRemoteCrawlURLs(this.sb.peers);
+            while (e.hasNext()) {
+                final Seed seed = e.next();
+                if (seed == null || seed.hash == null) {
+                    continue;
+                }
+                if (this.isRemoteCrawlProviderOnCooldown(seed.hash, now)) {
+                    continue;
+                }
+                if (this.sb.isRobinsonMode() && !this.sb.isInMyCluster(seed)) {
+                    continue;
+                }
+                this.remoteCrawlProviderHashes.add(seed.hash);
+            }
+            Collections.shuffle(this.remoteCrawlProviderHashes);
+        }
+    }
+
+    private Seed nextRemoteCrawlProvider(final long now) {
+        while (true) {
+            this.refillRemoteCrawlProviderHashes(now);
+            if (this.remoteCrawlProviderHashes == null || this.remoteCrawlProviderHashes.isEmpty()) {
+                return null;
+            }
+            final String hash = this.remoteCrawlProviderHashes.remove(this.remoteCrawlProviderHashes.size() - 1);
+            if (hash == null || this.isRemoteCrawlProviderOnCooldown(hash, now)) {
+                continue;
+            }
+            final Seed seed = this.sb.peers.get(hash);
+            if (seed == null) {
+                continue;
+            }
+            if (this.sb.isRobinsonMode() && !this.sb.isInMyCluster(seed)) {
+                continue;
+            }
+            return seed;
+        }
+    }
+
+    public String remoteCrawlLoaderLastStatus() {
+        return this.remoteCrawlLoaderLastStatus;
+    }
+
+    public long remoteCrawlLoaderLastStatusAgeSeconds() {
+        return Math.max(0L, (System.currentTimeMillis() - this.remoteCrawlLoaderLastStatusUTC) / 1000L);
+    }
+
+    public long remoteCrawlLoaderRunCount() {
+        return this.remoteCrawlLoaderRuns.get();
+    }
+
+    public long remoteCrawlLoaderSuccessCount() {
+        return this.remoteCrawlLoaderSuccesses.get();
+    }
+
+    public long remoteCrawlLoaderFetchedUrlCount() {
+        return this.remoteCrawlLoaderFetchedUrls.get();
+    }
+
+    public long remoteCrawlLoaderEmptyFeedCount() {
+        return this.remoteCrawlLoaderEmptyFeeds.get();
+    }
+
+    public long remoteCrawlLoaderFailedFeedCount() {
+        return this.remoteCrawlLoaderFailedFeeds.get();
+    }
+
+    public long remoteCrawlLoaderRejectedUrlCount() {
+        return this.remoteCrawlLoaderRejectedUrls.get();
+    }
+
+    public int remoteCrawlLoaderProviderCandidateCount() {
+        return this.remoteCrawlProviderHashes == null ? 0 : this.remoteCrawlProviderHashes.size();
+    }
+
+    public int remoteCrawlLoaderProviderCooldownCount() {
+        return this.remoteCrawlProviderCooldownCount(System.currentTimeMillis());
+    }
+
+    public int remoteCrawlLoaderLocalQueueLimit() {
+        return this.remoteCrawlLocalQueueLimit();
+    }
+
+    public int remoteCrawlLoaderMaxQueueSize() {
+        return REMOTE_CRAWL_MAX_QUEUE_SIZE;
+    }
+
+    public int remoteCrawlLoaderMaxProviderAttempts() {
+        return this.remoteCrawlMaxProviderAttempts();
+    }
+
+    public long remoteCrawlLoaderProviderCooldownSeconds() {
+        return this.remoteCrawlProviderCooldownMillis() / 1000L;
+    }
+
     public boolean remoteCrawlLoaderJob() {
+        this.remoteCrawlLoaderRuns.incrementAndGet();
         // check if we are allowed to crawl urls provided by other peers
         if (!this.sb.peers.mySeed().getFlagAcceptRemoteCrawl()) {
-            //this.log.logInfo("remoteCrawlLoaderJob: not done, we are not allowed to do that");
+            this.remoteCrawlLoaderStatus("remote crawl acceptance is disabled");
             return false;
         }
 
         // check if we are a senior peer
         if (!this.sb.peers.mySeed().isActive()) {
-            //this.log.logInfo("remoteCrawlLoaderJob: not done, this should be a senior or principal peer");
+            this.remoteCrawlLoaderStatus("peer is not senior or principal");
             return false;
         }
 
         // check again
         if (this.workerQueue.remainingCapacity() == 0) {
-            if (CrawlQueues.log.isFine()) {
-                CrawlQueues.log.fine("remoteCrawlLoaderJob: too many processes in loader queue, dismissed (" + "workerQueue=" + this.workerQueue.size() + "), httpClients = " + ConnectionInfo.getCount());
-            }
+            this.remoteCrawlLoaderFine("too many processes in loader queue, dismissed (workerQueue=" + this.workerQueue.size() + "), httpClients = " + ConnectionInfo.getCount());
             return false;
         }
 
         final String cautionCause = this.sb.onlineCaution();
         if (cautionCause != null) {
-            if (CrawlQueues.log.isFine()) {
-                CrawlQueues.log.fine("remoteCrawlLoaderJob: online caution for " + cautionCause + ", omitting processing");
-            }
+            this.remoteCrawlLoaderFine("online caution for " + cautionCause + ", omitting processing");
             return false;
         }
 
-        if (this.remoteTriggeredCrawlJobSize() > 200) {
-            if (CrawlQueues.log.isFine()) {
-                CrawlQueues.log.fine("remoteCrawlLoaderJob: the remote-triggered crawl job queue is filled, omitting processing");
-            }
+        final int remoteQueueSize = this.remoteTriggeredCrawlJobSize();
+        if (remoteQueueSize >= REMOTE_CRAWL_MAX_QUEUE_SIZE) {
+            this.remoteCrawlLoaderFine("the remote-triggered crawl job queue is filled (" + remoteQueueSize + "), omitting processing");
+            return false;
+        }
+        final int fetchCount = Math.min(REMOTE_CRAWL_MAX_FETCH_COUNT, REMOTE_CRAWL_MAX_QUEUE_SIZE - remoteQueueSize);
+
+        final int localQueueSize = this.coreCrawlJobSize();
+        final int localQueueLimit = this.remoteCrawlLocalQueueLimit();
+        if (localQueueSize > localQueueLimit /*&& sb.indexingStorageProcessor.queueSize() > 0*/) {
+            this.remoteCrawlLoaderFine("local crawl queue above remote loader limit (" + localQueueSize + " > " + localQueueLimit + "), omitting processing");
             return false;
         }
 
-        if (this.coreCrawlJobSize() > 0 /*&& sb.indexingStorageProcessor.queueSize() > 0*/) {
-            if (CrawlQueues.log.isFine()) {
-                CrawlQueues.log.fine("remoteCrawlLoaderJob: a local crawl is running, omitting processing");
-            }
-            return false;
-        }
-
-        // check if we have an entry in the provider list, otherwise fill the list
-        Seed seed;
-        if (this.remoteCrawlProviderHashes != null && this.remoteCrawlProviderHashes.isEmpty()) {
-            if (this.sb.peers != null && this.sb.peers.sizeConnected() > 0) {
-                final Iterator<Seed> e = DHTSelection.getProvidesRemoteCrawlURLs(this.sb.peers);
-                while (e.hasNext()) {
-                    seed = e.next();
-                    if (seed != null) {
-                        this.remoteCrawlProviderHashes.add(seed.hash);
-                    }
-                }
-            }
-        }
         if (this.remoteCrawlProviderHashes == null || this.remoteCrawlProviderHashes.isEmpty()) {
-            return false;
+            this.refillRemoteCrawlProviderHashes(System.currentTimeMillis());
         }
 
-        // take one entry from the provider list and load the entries from the remote peer
-        seed = null;
-        String hash = null;
-        while (seed == null && (this.remoteCrawlProviderHashes != null && !this.remoteCrawlProviderHashes.isEmpty())) {
-            hash = this.remoteCrawlProviderHashes.remove(this.remoteCrawlProviderHashes.size() - 1);
-            if (hash == null) {
-                continue;
-            }
-            seed = this.sb.peers.get(hash);
+        final int maxProviderAttempts = this.remoteCrawlMaxProviderAttempts();
+        int providerAttempts = 0;
+        while (providerAttempts < maxProviderAttempts) {
+            // take one entry from the provider list and load the entries from the remote peer
+            final long now = System.currentTimeMillis();
+            final Seed seed = this.nextRemoteCrawlProvider(now);
             if (seed == null) {
+                this.remoteCrawlLoaderStatus("no remote crawl providers with advertised work are currently selectable");
+                return false;
+            }
+            providerAttempts++;
+
+            // we know a peer which should provide remote crawl entries. load them now.
+            final String hash = seed.hash;
+            final boolean preferHttps = this.sb.getConfigBool(SwitchboardConstants.NETWORK_PROTOCOL_HTTPS_PREFERRED,
+                    SwitchboardConstants.NETWORK_PROTOCOL_HTTPS_PREFERRED_DEFAULT);
+            final RSSFeed feed = Protocol.queryRemoteCrawlURLs(this.sb.peers, seed, fetchCount, REMOTE_CRAWL_FETCH_MAX_TIME, preferHttps);
+            if (feed == null) {
+                this.remoteCrawlLoaderFailedFeeds.incrementAndGet();
+                this.cooldownRemoteCrawlProvider(hash, now);
+                this.remoteCrawlLoaderStatus("provider '" + seed.getName() + "' failed; trying another peer");
                 continue;
             }
-            // check if the peer is inside our cluster
-            if ((this.sb.isRobinsonMode()) && (!this.sb.isInMyCluster(seed))) {
-                seed = null;
+            if (feed.isEmpty()) {
+                this.remoteCrawlLoaderEmptyFeeds.incrementAndGet();
+                this.cooldownRemoteCrawlProvider(hash, now);
+                this.remoteCrawlLoaderStatus("provider '" + seed.getName() + "' returned no remote crawl URLs; trying another peer");
                 continue;
             }
-        }
-        if (seed == null) {
-            return false;
-        }
 
-        // we know a peer which should provide remote crawl entries. load them now.
-		final boolean preferHttps = this.sb.getConfigBool(SwitchboardConstants.NETWORK_PROTOCOL_HTTPS_PREFERRED,
-				SwitchboardConstants.NETWORK_PROTOCOL_HTTPS_PREFERRED_DEFAULT);
-        final RSSFeed feed = Protocol.queryRemoteCrawlURLs(this.sb.peers, seed, 60, 10000, preferHttps);
-        if (feed == null || feed.isEmpty()) {
-            // try again and ask another peer
-            return this.remoteCrawlLoaderJob();
-        }
+            this.remoteCrawlProviderCooldownUntil.remove(hash);
 
-        // parse the rss
-        DigestURL url, referrer;
-        Date loaddate;
-        for (final Hit item: feed) {
-            //System.out.println("URL=" + item.getLink() + ", desc=" + item.getDescription() + ", pubDate=" + item.getPubDate());
+            // parse the rss
+            int accepted = 0;
+            int rejected = 0;
+            DigestURL url, referrer;
+            Date loaddate;
+            for (final Hit item: feed) {
+                //System.out.println("URL=" + item.getLink() + ", desc=" + item.getDescription() + ", pubDate=" + item.getPubDate());
 
-            // put url on remote crawl stack
-            try {
-                url = new DigestURL(item.getLink());
-            } catch (final MalformedURLException e) {
-                continue;
-            }
-            try {
-                referrer = new DigestURL(item.getReferrer());
-            } catch (final MalformedURLException e) {
-                referrer = null;
-            }
-            loaddate = item.getPubDate();
-            final String urlRejectReason = this.sb.crawlStacker.urlInAcceptedDomain(url);
-            if (urlRejectReason == null) {
-                // stack url
-                if (this.sb.getLog().isFinest()) {
-                    this.sb.getLog().finest("crawlOrder: stack: url='" + url + "'");
+                // put url on remote crawl stack
+                try {
+                    url = new DigestURL(item.getLink());
+                } catch (final MalformedURLException e) {
+                    rejected++;
+                    continue;
                 }
-                this.sb.crawlStacker.enqueueEntry(new Request(
-                        ASCII.getBytes(hash),
-                        url,
-                        (referrer == null) ? null : referrer.hash(),
-                        item.getDescriptions().size() > 0 ? item.getDescriptions().get(0) : "",
-                        loaddate,
-                        this.sb.crawler.defaultRemoteProfile.handle(),
-                        0,
-                        this.sb.crawler.defaultRemoteProfile.timezoneOffset()
-                ));
-            } else {
-                CrawlQueues.log.warn("crawlOrder: Rejected URL '" + urlToString(url) + "': " + urlRejectReason);
+                try {
+                    referrer = new DigestURL(item.getReferrer());
+                } catch (final MalformedURLException e) {
+                    referrer = null;
+                }
+                loaddate = item.getPubDate();
+                final String urlRejectReason = this.sb.crawlStacker.urlInAcceptedDomain(url);
+                if (urlRejectReason == null) {
+                    // stack url
+                    if (this.sb.getLog().isFinest()) {
+                        this.sb.getLog().finest("crawlOrder: stack: url='" + url + "'");
+                    }
+                    this.sb.crawlStacker.enqueueEntry(new Request(
+                            ASCII.getBytes(hash),
+                            url,
+                            (referrer == null) ? null : referrer.hash(),
+                            item.getDescriptions().size() > 0 ? item.getDescriptions().get(0) : "",
+                            loaddate,
+                            this.sb.crawler.defaultRemoteProfile.handle(),
+                            0,
+                            this.sb.crawler.defaultRemoteProfile.timezoneOffset()
+                    ));
+                    accepted++;
+                } else {
+                    rejected++;
+                    CrawlQueues.log.warn("crawlOrder: Rejected URL '" + urlToString(url) + "': " + urlRejectReason);
+                }
             }
+            this.remoteCrawlLoaderSuccesses.incrementAndGet();
+            this.remoteCrawlLoaderFetchedUrls.addAndGet(accepted);
+            this.remoteCrawlLoaderRejectedUrls.addAndGet(rejected);
+            this.remoteCrawlLoaderStatus("loaded " + accepted + " remote crawl URL(s) from '" + seed.getName() + "' (" + rejected + " rejected, " + feed.size() + " offered)");
+            return true;
         }
-        return true;
+        this.remoteCrawlLoaderStatus("no remote crawl provider returned URLs after " + providerAttempts + " attempt(s)");
+        return false;
     }
 
     public boolean autocrawlJob() {

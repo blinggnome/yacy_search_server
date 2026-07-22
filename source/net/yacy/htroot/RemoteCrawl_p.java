@@ -80,6 +80,22 @@ public class RemoteCrawl_p {
         final long RTCbusySleep = Math.max(1, env.getConfigLong(SwitchboardConstants.CRAWLJOB_REMOTE_TRIGGERED_CRAWL_BUSYSLEEP, 100));
         final int RTCppm = (int) (60000L / RTCbusySleep);
         prop.put("acceptCrawlLimit", RTCppm);
+        prop.putHTML("remoteCrawlLoaderLastStatus", sb.crawlQueues.remoteCrawlLoaderLastStatus());
+        prop.putNum("remoteCrawlLoaderLastStatusAge", sb.crawlQueues.remoteCrawlLoaderLastStatusAgeSeconds());
+        prop.putNum("remoteCrawlLoaderRuns", sb.crawlQueues.remoteCrawlLoaderRunCount());
+        prop.putNum("remoteCrawlLoaderSuccesses", sb.crawlQueues.remoteCrawlLoaderSuccessCount());
+        prop.putNum("remoteCrawlLoaderFetchedUrls", sb.crawlQueues.remoteCrawlLoaderFetchedUrlCount());
+        prop.putNum("remoteCrawlLoaderEmptyFeeds", sb.crawlQueues.remoteCrawlLoaderEmptyFeedCount());
+        prop.putNum("remoteCrawlLoaderFailedFeeds", sb.crawlQueues.remoteCrawlLoaderFailedFeedCount());
+        prop.putNum("remoteCrawlLoaderRejectedUrls", sb.crawlQueues.remoteCrawlLoaderRejectedUrlCount());
+        prop.putNum("remoteCrawlLoaderProviderCandidates", sb.crawlQueues.remoteCrawlLoaderProviderCandidateCount());
+        prop.putNum("remoteCrawlLoaderProviderCooldowns", sb.crawlQueues.remoteCrawlLoaderProviderCooldownCount());
+        prop.putNum("remoteCrawlLoaderRemoteQueue", sb.crawlQueues.remoteTriggeredCrawlJobSize());
+        prop.putNum("remoteCrawlLoaderRemoteQueueMax", sb.crawlQueues.remoteCrawlLoaderMaxQueueSize());
+        prop.putNum("remoteCrawlLoaderLocalQueue", sb.crawlQueues.coreCrawlJobSize());
+        prop.putNum("remoteCrawlLoaderLocalQueueLimit", sb.crawlQueues.remoteCrawlLoaderLocalQueueLimit());
+        prop.putNum("remoteCrawlLoaderMaxProviderAttempts", sb.crawlQueues.remoteCrawlLoaderMaxProviderAttempts());
+        prop.putNum("remoteCrawlLoaderProviderCooldownSeconds", sb.crawlQueues.remoteCrawlLoaderProviderCooldownSeconds());
 
 
         // -------------------------------------------------------------------------------------

@@ -31,6 +31,22 @@
       </dl>
     </form>
     </fieldset>
+
+    <fieldset>
+      <legend>Remote Crawl Loader Status</legend>
+      <dl>
+        <dt>Last status</dt>
+        <dd>#[remoteCrawlLoaderLastStatus]# (#[remoteCrawlLoaderLastStatusAge]# seconds ago)</dd>
+        <dt>Provider selection</dt>
+        <dd>#[remoteCrawlLoaderProviderCandidates]# queued candidate(s), #[remoteCrawlLoaderProviderCooldowns]# provider(s) in #[remoteCrawlLoaderProviderCooldownSeconds]# second cooldown, up to #[remoteCrawlLoaderMaxProviderAttempts]# provider attempt(s) per loader run</dd>
+        <dt>Queue pressure</dt>
+        <dd>Remote queue #[remoteCrawlLoaderRemoteQueue]# / #[remoteCrawlLoaderRemoteQueueMax]#; local queue #[remoteCrawlLoaderLocalQueue]# / #[remoteCrawlLoaderLocalQueueLimit]# before deferring</dd>
+        <dt>Loader counters</dt>
+        <dd>#[remoteCrawlLoaderRuns]# run(s), #[remoteCrawlLoaderSuccesses]# successful fetch(es), #[remoteCrawlLoaderFetchedUrls]# URL(s) queued, #[remoteCrawlLoaderRejectedUrls]# URL(s) rejected</dd>
+        <dt>Provider misses</dt>
+        <dd>#[remoteCrawlLoaderEmptyFeeds]# empty feed(s), #[remoteCrawlLoaderFailedFeeds]# failed feed(s)</dd>
+      </dl>
+    </fieldset>
     
     <fieldset>
       <legend>Peers offering remote crawl URLs</legend>

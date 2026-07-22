@@ -464,8 +464,6 @@ public final class Protocol {
                 if (reader != null) {
                     break;
                 }
-                target.put(Seed.RCOUNT, "0");
-                seedDB.peerActions.interfaceDeparture(target, ip);
             }
         } catch (IOException e) {
             Network.log.warn(e);
@@ -476,10 +474,11 @@ public final class Protocol {
             // case where the rss reader does not understand the content
             Network.log.warn("yacyClient.queryRemoteCrawlURLs failed asking peer '" + target.getName() + "': probably bad response from remote peer (2)");
             //System.out.println("***DEBUG*** rss input = " + UTF8.String(result));
-            target.put(Seed.RCOUNT, "0");
-            seedDB.updateConnected(target); // overwrite number of remote-available number to avoid that this peer is called again (until update is done by peer ping)
             //Log.logException(e);
             return null;
+        }
+        if (feed.isEmpty()) {
+            return feed;
         }
         // update number of remotely available links in seed
         target.put(Seed.RCOUNT, Integer.toString(Math.max(0, targetCount - feed.size())));
