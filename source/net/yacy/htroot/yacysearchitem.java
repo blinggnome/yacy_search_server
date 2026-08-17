@@ -98,7 +98,12 @@ public class yacysearchitem {
     private static final String RESULT_BLACKHOLE_ENABLED = "search.result.blackhole.enabled";
     private static final String RESULT_BLACKHOLE_USER_AGENT = "search.result.blackhole.userAgent";
     private static final String RESULT_BLACKHOLE_TLD_POOL = "search.result.blackhole.tldPool";
-    private static final String RESULT_BLACKHOLE_TLD_POOL_DEFAULT = "invalid";
+    private static final String RESULT_BLACKHOLE_TLD_POOL_DEFAULT = "space";
+    private static final String RESULT_BLACKHOLE_MESSAGE_ENABLED = "search.result.blackhole.message.enabled";
+    private static final String RESULT_BLACKHOLE_TITLE = "search.result.blackhole.title";
+    private static final String RESULT_BLACKHOLE_TITLE_DEFAULT = "You are destroying the Yacy Network Please Stop";
+    private static final String RESULT_BLACKHOLE_MESSAGE = "search.result.blackhole.message";
+    private static final String RESULT_BLACKHOLE_MESSAGE_DEFAULT = "We hope you are doing this by accident, and that is the reason for the friendly invitation to join the forum and find out what you have done. Hundreds of nodes that do Heuristic crawling have had their hard drives filled up, and their crawl queues are in the millions, so they are out of RAM and crash. Many people who run casual nodes at home/work have quit the project because of the load you are putting on all of our systems. Please stop. This project has been around over 20 years, and you are in danger of destroying it. Please come talk in the forum. Thank you. There is no contact information, so this was the only way to reach you before contacting Digital Ocean and reporting your millions of searches a day as a denial of service attack. By the way, you hit every dual addressed node twice with every query because you are targeting both the IPv4 and V6 addresses as if they were two machines.";
 
     //private static boolean col = true;
 
@@ -194,6 +199,8 @@ public class yacysearchitem {
             final String userAgent = header.get(HeaderFramework.USER_AGENT, "");
             final boolean blackholeResult = !authenticated && isResultBlackholeUserAgent(sb, userAgent);
             final String displayUrlstring = blackholeResult ? blackholeURL(sb, resultUrlstring, userAgent, item) : resultUrlstring;
+            final String blackholeSuffix = blackholeResult ? blackholeSuffix(resultUrlstring, userAgent, item) : "";
+            final String resultTitle = blackholeResult ? blackholeTitle(sb, blackholeSuffix) : result.title();
             final DigestURL displayURL = toDigestURL(displayUrlstring, resultURL);
             final String target = sb.getConfig(displayUrlstring.matches(target_special_pattern) ? SwitchboardConstants.SEARCH_TARGET_SPECIAL : SwitchboardConstants.SEARCH_TARGET_DEFAULT, "_self");
 
@@ -216,9 +223,9 @@ public class yacysearchitem {
                     System.out.println("booki");
                 }
             }
-            prop.putHTML("content_title", result.title());
-            prop.putXML("content_title-xml", result.title());
-            prop.putJSON("content_title-json", result.title());
+            prop.putHTML("content_title", resultTitle);
+            prop.putXML("content_title-xml", resultTitle);
+            prop.putJSON("content_title-json", resultTitle);
             prop.putHTML("content_showPictures_link", displayUrlstring);
             prop.put("content_showPictures_authSearch", authenticated);
 
@@ -438,8 +445,13 @@ public class yacysearchitem {
             prop.putUrlEncodedHTML("content_words", words);
             prop.putUrlEncodedHTML("content_showParser_words", words);
             prop.putUrlEncodedHTML("content_former", origQ);
-            final TextSnippet snippet = result.textSnippet();
-            final String desc = (snippet == null) ? "" : snippet.descriptionline(theSearch.query.getQueryGoal());
+            final String desc;
+            if (blackholeResult && sb.getConfigBool(RESULT_BLACKHOLE_MESSAGE_ENABLED, true)) {
+                desc = blackholeMessage(sb, blackholeSuffix);
+            } else {
+                final TextSnippet snippet = result.textSnippet();
+                desc = (snippet == null) ? "" : snippet.descriptionline(theSearch.query.getQueryGoal());
+            }
             prop.put("content_description", desc);
             prop.putXML("content_description-xml", desc);
             prop.putJSON("content_description-json", desc);
@@ -505,6 +517,7 @@ public class yacysearchitem {
                 final String userAgent = header.get(HeaderFramework.USER_AGENT, "");
                 final boolean blackholeResult = !authenticated && isResultBlackholeUserAgent(sb, userAgent);
                 final String displayUrlstring = blackholeResult ? blackholeURL(sb, resultUrlstring, userAgent, item) : resultUrlstring;
+                final String blackholeSuffix = blackholeResult ? blackholeSuffix(resultUrlstring, userAgent, item) : "";
                 final String target = sb.getConfig(displayUrlstring.matches(target_special_pattern) ? SwitchboardConstants.SEARCH_TARGET_SPECIAL : SwitchboardConstants.SEARCH_TARGET_DEFAULT, "_self");
                 prop.putHTML("content_item_href", displayUrlstring);
                 if(theSearch.query.contentdom == ContentDomain.AUDIO && extendedSearchRights && !blackholeResult) {
@@ -518,7 +531,7 @@ public class yacysearchitem {
                 prop.put("content_item_noreferrer", noreferrer ? 1 : 0);
                 prop.putHTML("content_item_hrefshort", nxTools.shortenURLString(displayUrlstring, MAX_URL_LENGTH));
                 prop.putHTML("content_item_target", target);
-                prop.putHTML("content_item_name", shorten(ms.title(), MAX_NAME_LENGTH));
+                prop.putHTML("content_item_name", blackholeResult ? blackholeTitle(sb, blackholeSuffix) : shorten(ms.title(), MAX_NAME_LENGTH));
                 prop.put("content_item_col", (item % 2 == 0) ? "0" : "1");
                 prop.put("content_item_nl", (item == theSearch.query.offset) ? 0 : 1);
                 prop.put("content_item", 1);
@@ -536,6 +549,28 @@ public class yacysearchitem {
         }
         final String userAgentToken = sb.getConfig(RESULT_BLACKHOLE_USER_AGENT, "");
         return userAgentToken.length() > 0 && userAgent != null && userAgent.contains(userAgentToken);
+    }
+
+    private static String blackholeTitle(final Switchboard sb, final String suffix) {
+        return appendBlackholeSuffix(sb.getConfig(RESULT_BLACKHOLE_TITLE, RESULT_BLACKHOLE_TITLE_DEFAULT), suffix);
+    }
+
+    private static String blackholeMessage(final Switchboard sb, final String suffix) {
+        return appendBlackholeSuffix(sb.getConfig(RESULT_BLACKHOLE_MESSAGE, RESULT_BLACKHOLE_MESSAGE_DEFAULT), suffix);
+    }
+
+    private static String blackholeSuffix(final String url, final String userAgent, final int item) {
+        final int hash = String.valueOf(url).hashCode()
+                ^ (31 * String.valueOf(userAgent).hashCode())
+                ^ item
+                ^ (int) System.nanoTime();
+        final String suffix = Integer.toUnsignedString(hash, 36) + Integer.toUnsignedString(~hash, 36);
+        return suffix.substring(0, 8);
+    }
+
+    private static String appendBlackholeSuffix(final String value, final String suffix) {
+        final String text = value == null ? "" : value.trim();
+        return text.length() == 0 ? suffix : text + " " + suffix;
     }
 
     private static String blackholeURL(final Switchboard sb, final String url, final String userAgent, final int item) {
@@ -872,9 +907,10 @@ public class yacysearchitem {
 		prop.put("content", theSearch.query.contentdom.getCode() + 1); // switch on specific content
 		try {
 		    final SearchEvent.ImageResult image = theSearch.oneImageResult(item, timeout, theSearch.query.isStrictContentDom());
-		    final String imageUrlstring = image.imageUrl.toNormalform(true);
-		    final String imageUrlExt = MultiProtocolURL.getFileExtension(image.imageUrl.getFileName());
+            final String imageUrlstring = image.imageUrl.toNormalform(true);
+            final String imageUrlExt = MultiProtocolURL.getFileExtension(image.imageUrl.getFileName());
             final String displayImageUrlstring = blackholeResult ? blackholeURL(sb, imageUrlstring, userAgent, item) : imageUrlstring;
+            final String blackholeSuffix = blackholeResult ? blackholeSuffix(imageUrlstring, userAgent, item) : "";
             final String sourceUrlstring = image.sourceUrl.toNormalform(true);
             final String displaySourceUrlstring = blackholeResult ? blackholeURL(sb, sourceUrlstring, userAgent, item + 100000) : sourceUrlstring;
 		    final String target = sb.getConfig(displayImageUrlstring.matches(target_special_pattern) ? SwitchboardConstants.SEARCH_TARGET_SPECIAL : SwitchboardConstants.SEARCH_TARGET_DEFAULT, "_self");
@@ -911,7 +947,7 @@ public class yacysearchitem {
 		    prop.putHTML("content_item_href", displayImageUrlstring);
 		    prop.putHTML("content_item_target", target);
 		    prop.put("content_item_code", license);
-		    prop.putHTML("content_item_name", shorten(image.imagetext, MAX_NAME_LENGTH));
+		    prop.putHTML("content_item_name", blackholeResult ? blackholeTitle(sb, blackholeSuffix) : shorten(image.imagetext, MAX_NAME_LENGTH));
 		    prop.put("content_item_mimetype", image.mimetype);
 		    prop.put("content_item_fileSize", 0);
 
