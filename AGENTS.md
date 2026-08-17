@@ -7,6 +7,12 @@ Patch YaCy Java, templates, tests, and documentation here only when the task is
 about the YaCy dev node itself. Bridge code and OpenSearch-facing behavior live
 in `/home/programmer/Documents/Yacy_bridge_builder`.
 
+Project workspaces may exchange handoff files, runbooks, and status notes, but
+Git ownership stays local to each workspace. Do not stage, commit, push, clean,
+reset, or otherwise manage Git state in another project's directory unless the
+user explicitly asks for that directory's Git work in this session. Treat dirty
+state in sibling workspaces as owned by the agent that works there.
+
 ## Codebase Knowledge Graph
 
 Use codebase-memory-mcp for code discovery before broad grep/file reads.
@@ -92,6 +98,9 @@ treating the server as down.
 
 Keep YaCy fork commits separate from bridge commits. Check
 `git status --short --branch` before and after committing.
+
+When copying handoffs into another workspace, leave that workspace's Git state
+alone. The local agent for that directory owns any add/commit/push decisions.
 
 After the user confirms a dev-node feature works, create a focused commit and
 push to the appropriate GitHub remote unless the user asks not to. Do not commit
