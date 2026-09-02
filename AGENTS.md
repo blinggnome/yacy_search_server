@@ -94,6 +94,24 @@ If required `ssh`, `curl`, deploy, or browser checks fail with DNS/host
 resolution errors inside the sandbox, retry with escalated network access before
 treating the server as down.
 
+## Documentation Checkpoints
+
+Keep `docs/dev-node-change-log.md` current for every meaningful local YaCy
+dev-node change, including features, crawler/index behavior changes, fleet
+patches, rollback-relevant fixes, and handoff documents.
+
+Before the final commit for a change, add or update a short changelog entry
+covering behavior, commit or patch boundary, touched files, config/data paths,
+verification, and rollout or rollback notes when relevant. If the exact commit
+hash is not known because the changelog is committed with the code, identify the
+commit by subject and backfill the hash later when it matters for fleet rollout,
+upstream submission, or rollback.
+
+Use focused topical docs in addition to the central changelog when the behavior
+has operational nuance, examples, config keys, or future-work notes. Start future
+investigations from the changelog and linked topic docs before reconstructing
+history from Git.
+
 ## Git Checkpoints
 
 Keep YaCy fork commits separate from bridge commits. Check
