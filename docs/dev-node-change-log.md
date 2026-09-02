@@ -15,7 +15,7 @@ Each entry should answer:
 
 ## 2026-09-01: Central Changelog Backfill
 
-Commit: this documentation pass, subject `Backfill dev-node change log`
+Commit: `666480fc2`
 
 Files:
 
