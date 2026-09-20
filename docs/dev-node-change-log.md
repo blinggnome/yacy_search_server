@@ -13,6 +13,25 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-20: On-Demand AccessTracker Fleet Repair Handoff
+
+Documentation/artifact boundary only; Java fix remains `466e57146` / PR 831.
+No runtime changes or fleet deployment during handoff preparation.
+
+- `FLEET_ACCESS_TRACKER_FIX_HANDOFF.md` provides per-affected-node diagnosis,
+  strict baseline checks, backup, atomic installation, authenticated application
+  verification, query-history preservation, follow-up and rollback commands.
+- Portable ignored archive: `backups/access-tracker-handoff-20260920/`.
+  Contains tested JAR, source, synthetic tests, isolated patch and checksums;
+  no settings, credentials, private reports or query history.
+- Reverified exactly four changed AccessTracker class entries with 1,650 other
+  entries unchanged. All 19 focused tests pass against the packaged JAR.
+- Requires the known old JAR hash; unknown/newer baselines are a hard stop.
+  Server2 and all dev installs are excluded. Preserve all existing fleet fixes.
+- Explains that post-restart in-memory request counters are not saved-log totals.
+- Provisioner owns future deployment and its own Git; this is not a bulk rollout.
+- Work order: `docs/work-orders/completed/20260920T180541Z-access-tracker-fleet-handoff.md`.
+
 ## 2026-09-20: Robust AccessTracker Query History And Upstream Submission
 
 Dev commit: `466e57146`. Upstream commit: `3bb969ea4`.

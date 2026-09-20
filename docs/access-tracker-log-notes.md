@@ -49,6 +49,17 @@ request as an ongoing load-test recipe.
 
 ## Deployment And Rollback Record
 
+For future on-demand standard-node repair, use
+[`FLEET_ACCESS_TRACKER_FIX_HANDOFF.md`](../FLEET_ACCESS_TRACKER_FIX_HANDOFF.md).
+It includes a checksummed portable payload, strict baseline/dependency gates,
+live-failure evidence collection, history-preserving installation, authenticated
+before/after validation and rollback. It does not authorize a fleet-wide rollout.
+Prepared 2026-09-20; no additional nodes deployed during handoff preparation.
+
+The page's entry/total counters reset on JVM restart because they come from
+`localSearches` and `localCount`. The table is not reloaded from `queries.log`;
+its small post-restart count does not measure or imply loss of saved history.
+
 Target: Server2 `/opt/yacy-dev`, `yacy-dev.service`, port 8091. The regular
 `yacy.service` was already disabled/inactive and remains so. No fleet deployment.
 
