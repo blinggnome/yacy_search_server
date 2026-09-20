@@ -33,8 +33,9 @@ PR: https://github.com/yacy/yacy_search_server/pull/831
 - Log path remains `DATA/LOG/queries.log`; no new settings or fleet rollout.
 - Details, hashes, backups, performance observations, limitations and rollback:
   `docs/access-tracker-log-notes.md`.
-- Work order: `docs/work-orders/active/20260920T030516Z-access-tracker-fix.md`
-  (move to completed on closeout).
+- Work order: `docs/work-orders/completed/20260920T030516Z-access-tracker-fix.md`.
+- PR ready for review and mergeable; GitHub `build` and `build-and-release`
+  checks both passed. Documentation checkpoint: `03eb06d4b`.
 
 ## 2026-09-20: AccessTracker Query Log Failure Investigation
 

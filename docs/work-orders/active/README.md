@@ -7,6 +7,6 @@ Revalidate uncertain live state before repeating any command.
 | Work order | Status | Next action |
 | --- | --- | --- |
 
-| [AccessTracker fix and upstream PR](20260920T030516Z-access-tracker-fix.md) | active | Implement and validate regression fix |
+No active work orders recorded. See the completed archive for closed work.
 
 [Lifecycle and template](../README.md) | [Completed archive](../completed/README.md)

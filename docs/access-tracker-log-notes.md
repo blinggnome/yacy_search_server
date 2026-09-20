@@ -8,6 +8,7 @@ assessment is retained below; implementation and dev validation are now complete
 - Dev commit: `466e57146` (Fix malformed query history records and date range boundaries).
 - Upstream commit: `3bb969ea4`, branch `fix/access-tracker-query-log`.
 - PR: https://github.com/yacy/yacy_search_server/pull/831
+- PR ready for review; GitHub `build` and `build-and-release` checks both passed.
 - Files: `source/net/yacy/search/query/AccessTracker.java` and
   `test/java/net/yacy/search/query/AccessTrackerTest.java`.
 - No new settings. Existing query history path remains `DATA/LOG/queries.log`.
@@ -90,7 +91,9 @@ the PR body. Remote helpers are in `/tmp/`; no credentials were copied into them
 Remaining limitations: the existing five-digit count ceiling and chronological
 log-ordering assumption are retained. Exact reconstruction of old multiline
 query text, optional diagnostic UI, and the upstream test-classpath issue remain
-separate work. CI/maintainer review are external to dev validation.
+separate work. Maintainer review is pending; GitHub CI checks passed at closeout.
+
+[Completed implementation work order](work-orders/completed/20260920T030516Z-access-tracker-fix.md).
 
 ## Diagnosis
 
