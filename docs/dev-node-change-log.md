@@ -13,6 +13,71 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-20: Robust AccessTracker Query History And Upstream Submission
+
+Dev commit: `466e57146`. Upstream commit: `3bb969ea4`.
+PR: https://github.com/yacy/yacy_search_server/pull/831
+
+- `AccessTracker.java` now keeps logged queries on one line, validates record
+  headers during seeking/reading, skips malformed legacy lines, and corrects
+  inclusive/exclusive boundaries, duplicate timestamps and EOF handling.
+- Bounded buffered UTF-8 reads replace allocation of the entire selected range.
+- Added `AccessTrackerTest.java`: 11 regressions fail on baseline and pass after
+  the fix. 19 focused tests pass including QueryParams/GenericFormatter.
+- Dev `ant compileTest` and upstream application compile pass. The upstream
+  full test target has an unrelated missing Solr bridge classpath; focused tests
+  pass using the complete classpath. See PR for commands and synthetic examples.
+- Deployed only Server2 dev 8091, preserving 1,650 unrelated JAR entries and the
+  original query history. Live history/timeline/local search return HTTP 200, and
+  a new synthetic multiline query is persisted as a single physical line.
+- Log path remains `DATA/LOG/queries.log`; no new settings or fleet rollout.
+- Details, hashes, backups, performance observations, limitations and rollback:
+  `docs/access-tracker-log-notes.md`.
+- Work order: `docs/work-orders/active/20260920T030516Z-access-tracker-fix.md`
+  (move to completed on closeout).
+
+## 2026-09-20: AccessTracker Query Log Failure Investigation
+
+Patch boundary: investigation/documentation only, uncommitted. No YaCy source
+or runtime change, deployment, production log modification or upstream PR.
+
+- Added `docs/access-tracker-log-notes.md` with verified source paths, synthetic
+  reproduction, additional date-range defects, and a proposed isolated patch.
+- Current source reproduces the reported multiline-log NumberFormatException.
+  Other malformed-line positions return empty history during date seeking.
+- Clean-log fixtures also expose omitted final records and incorrect interval
+  boundaries. The proposed fix must cover seeking as well as line parsing.
+- Compiled the unmodified reader with Java 11 target and ran an isolated local
+  synthetic harness; full build and HTTP/canary validation remain future work.
+- Private report and raw query data are excluded from these documents/tests.
+- Work order: `docs/work-orders/completed/20260920T025230Z-access-tracker-review.md`.
+
+## 2026-09-20: Persistent Work Orders And Durable Workflow Instructions
+
+Patch boundary: documentation only; left uncommitted for this workspace's
+agent to review and commit. No application or remote-node changes.
+
+Files:
+
+- `AGENTS.md`
+- `docs/work-orders/README.md`, `TEMPLATE.md`, `active/README.md`,
+  `completed/README.md`
+- `docs/dev-node-change-log.md`
+
+Behavior:
+
+- Work orders, current task state and closed outcomes stay in this workspace.
+- Adopted the codebase-only output trial for one or two dev-builder sessions,
+  retaining complete cached responses and reverting if usefulness declines.
+- Added concrete local-memory/Vestige lookup, verified breadcrumb capture,
+  documented user corrections and resume/closeout requirements.
+- Preserved dev/standard-node isolation, build/rollback guidance and local Git
+  ownership. No fleet-specific identity, helpers or deployment rules imported.
+
+Verification scope: documentation links, whitespace, scope and preservation
+of existing operational sections; no live deployment or Java test required.
+The workspace-local agent should review the uncommitted documentation diff.
+
 ## 2026-09-01: Central Changelog Backfill
 
 Commit: `666480fc2`
