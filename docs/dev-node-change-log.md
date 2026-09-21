@@ -6,12 +6,35 @@ Topical notes can still live in focused files such as
 meaningful local feature, fix, fleet patch, or handoff should have a short entry
 here.
 
+For a plain-language overview grouped by benefit, contribution readiness and
+future ideas, start with the [Dev Node Improvement Catalog](dev-node-improvement-catalog.md).
+
 Each entry should answer:
 
 - What behavior changed?
 - Which commit or patch boundary carries it?
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
+
+## 2026-09-21: Human-Readable Improvement Catalog And Contribution Review
+
+Documentation only; application checkpoint remains `eaad79496`. Checkpoint
+subject: `Catalog dev node improvements and contribution priorities`.
+
+- Added `docs/dev-node-improvement-catalog.md`, grouping all 37 retained
+  functional commits since `94e8ac3b5` into user-facing capabilities, with a
+  source/commit appendix and separate retired/out-of-scope experiments.
+- Cross-checked current source, existing tests, topic notes and Git history.
+  PR 809 is merged; PR 831 remains open with passing build checks as of review.
+- Separated existing future plans from new ideas, including safer error/DNS
+  cleanup, truthful deferred-deletion counts, cancellation/recovery, metadata
+  freshness, concurrency tests and upstream patch isolation.
+- Corrected the historical HTTP-error description below: the current predicate
+  covers status >=400, not only definitive permanent failures. No policy change
+  was made. The catalog explicitly flags this for review.
+- No application edits, test reruns, deployments, node probes or sibling Git
+  changes. Validation and final checkpoint are recorded in the catalog work
+  order under `docs/work-orders/`.
 
 ## 2026-09-21: Sanitized AccessTracker Production Evidence Published
 
@@ -629,8 +652,9 @@ Behavior:
 - Marked SAML/authentication handoff pages as `noindex,nofollow`.
 - Preferred richer metadata on recrawl rather than overwriting useful existing
   records with weaker new data.
-- Removed stale index records after definitive bad recrawls such as HTTP 4xx or
-  5xx responses.
+- Removed stale index records after eligible bad recrawls with HTTP status >=400.
+  This includes temporary failures, not just definitively gone content; see the
+  improvement catalog's safety-review recommendation before upstreaming it.
 - Added a purge action for failure markers.
 - Rejected zero-content stubs and parsed soft-error pages before indexing.
 
@@ -649,6 +673,8 @@ For every future meaningful YaCy dev-node change:
 
 - Update this file before the final commit.
 - Keep or add topical docs when the feature has operational nuance.
+- Update the grouped improvement catalog when behavior or contribution status
+  changes; keep future ideas separate from implemented capabilities.
 - Include config keys, blacklist names, data files, or runtime paths when they
   matter.
 - Include the exact commit hash once known when the entry will be used as a
