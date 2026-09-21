@@ -37,14 +37,21 @@ or rerun application tests. Upstream PR status was checked on the review date.
 | Index quality | Better recrawls can replace weak records; empty stubs and error pages are rejected | Separate quality improvements from destructive cleanup policy |
 | Content controls | Page-level soft rules, host-level Poison Pills, protective whitelist | Valuable operator tools; strengthen safety and recovery before upstreaming |
 | Dead hosts/domains | Detect parked domains and certain DNS failures; clean up and blacklist | Needs stronger evidence and reversibility safeguards |
-| Administration | Better crawler action reporting, blacklist undo and convenient crawl buttons | Small UI changes are easy to isolate; larger tools depend on custom features |
+| Administration | Better crawler action reporting, blacklist undo and convenient crawl buttons | Crawl-start button PR 832 open; larger tools depend on custom features |
 | Abusive-client response | Special responses and heuristic-crawl suppression for a configured client | Keep the current targeted policy local; consider general rate controls separately |
 
 ### Suggested Contribution Order
 
+**User decision, September 21, 2026:** submit only the crawl-start button (U1)
+as the next PR. Other unsubmitted features need further testing and a separate
+decision before upstream publication. The list below remains a planning guide,
+not authorization to publish those features. Existing PRs 809 and 831 are
+unaffected by this decision.
+
 1. Follow through on [PR 831](https://github.com/yacy/yacy_search_server/pull/831)
    rather than opening a duplicate. The thread fix is already merged.
-2. Offer the duplicate **Start New Crawl Job** button as a small UI PR.
+2. Duplicate **Start New Crawl Job** button submitted as
+   [PR 832](https://github.com/yacy/yacy_search_server/pull/832), ready for review.
 3. Separate the general HTML parser fixes into small regression-backed patches:
    empty titles, missing descriptions, malformed tags and oversized titles.
 4. Prepare the remote-crawl persistence fix with simulated failing/empty peers.
@@ -435,9 +442,14 @@ remote work does not guarantee every advertised queue can supply jobs.
 while retaining the original bottom button. When previous options are already
 correct, the user can paste a URL and start without scrolling through the form.
 
-**Evidence:** user confirmed both placement and behavior. **Upstream:** the
-smallest independent feature candidate. Verify both buttons submit identical
-form fields and check narrow-screen layout before submitting.
+**Evidence:** user confirmed placement and behavior on the dev node. On September
+21, browser fixture checks against current upstream plus the patch verified
+identical 22-field submissions from both buttons at 1440, 1024 and 390 px,
+including multiple URLs, edited depth and the crawl-start flag. The button wraps
+without overlap; the form's pre-existing mobile overflow is unchanged.
+**Upstream:** [PR 832](https://github.com/yacy/yacy_search_server/pull/832) is open
+and ready for review. Its sole commit `fdfc741d3` adds one line to this template;
+no other fork work is included. CI was in progress at publication.
 
 ### U2. Targeted Abusive-Client Response Policy
 

@@ -16,6 +16,34 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-21: Crawl-Start Button Submitted Upstream
+
+PR: https://github.com/yacy/yacy_search_server/pull/832
+Original dev commit: `5e4c8ca1d`. Isolated PR commit: `fdfc741d3`.
+Local documentation checkpoint: `Record crawl-start button upstream PR`.
+
+- Added button remains the same tested one-line change to
+  `htroot/CrawlStartExpert.html`; no new dev-runtime changes or deployments.
+- PR is open and ready for review. GitHub read-back confirms one commit, one
+  file, +1/-0 and the exact reviewed public description. Initial CI status:
+  `build` and `build-and-release` in progress, not yet claimed passing.
+- Current upstream integration was tested at `de973ca4444912ecfe8682dedc9e14842f8a4d57`.
+  To avoid requiring additional workflow-token scope, publication uses shared
+  ancestor `94e8ac3b5`; merge-tree equals tested integration tree
+  `994f5af4f59b0bf10e515aba84a71172fc5a0764`. Fork master was not reset or synced.
+- Chrome/YaCy-template fixture at 1440, 1024 and 390 px: both submit controls
+  send identical 22-field data including URLs, depth and `crawlingstart=1`.
+  No overlap or added horizontal overflow. Existing narrow-screen overflow
+  remains outside scope. No actual crawls were submitted during these checks.
+- Fixture used repository assets, without generated/custom `env/style.css`.
+  No Java compilation gate was needed for this template-only patch. Existing
+  live dev testing is distinguished from today's synthetic fixture checks.
+- Ignored evidence, screenshots, public body and worktrees:
+  `backups/crawl-start-button-pr-20260921/`. Temporary test services stopped.
+- User decision recorded in the catalog: other unsubmitted improvements need
+  more testing and a separate publication decision. None are included in PR 832.
+- Work order: `docs/work-orders/completed/20260921T230257Z-crawl-start-button-pr.md`.
+
 ## 2026-09-21: Human-Readable Improvement Catalog And Contribution Review
 
 Documentation only; application checkpoint remains `eaad79496`. Checkpoint
