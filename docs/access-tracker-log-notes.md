@@ -3,6 +3,26 @@
 Initially investigated 2026-09-20 UTC (2026-09-19 America/Denver). The original
 assessment is retained below; implementation and dev validation are now complete.
 
+## Production Validation Follow-up (2026-09-21)
+
+The provisioner's rollout report dated 2026-09-20 records 83 verified instances:
+82 updated and one already-patched canary. All 27 parser failures present before
+the rollout recovered; all 83 history pages and their associated local search,
+Solr and access-tracker checks passed. Approximately 8.14 GB of original history
+was verified unchanged across the 82 updated instances. The earlier canary was
+validated separately. These are report-based post-deployment results, not fresh
+live probes, an overnight soak test or complete external routing verification.
+
+With explicit user approval, published an aggregate-only summary on PR 831:
+https://github.com/yacy/yacy_search_server/pull/831#issuecomment-5762715488
+
+Reviewed public text: `docs/access-tracker-public-rollout-evidence.md`. Counts
+were cross-checked against the report's per-node table. Identity, path, hash,
+credential and attachment checks passed, and the posted body was read back and
+matched exactly. No internal report, host identities, raw queries, runtime
+fingerprints, private HTTP bodies or per-node evidence were uploaded. No changes
+were made to the provisioner's workspace or the fleet during publication.
+
 ## Implemented Fix And Dev Validation
 
 - Dev commit: `466e57146` (Fix malformed query history records and date range boundaries).

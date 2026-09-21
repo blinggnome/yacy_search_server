@@ -13,6 +13,25 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-21: Sanitized AccessTracker Production Evidence Published
+
+Documentation/publication only; source patch and PR code unchanged. Checkpoint
+subject: `Record sanitized AccessTracker production validation`.
+
+- Published aggregate results on upstream PR 831 with explicit user approval:
+  https://github.com/yacy/yacy_search_server/pull/831#issuecomment-5762715488
+- 83 instances verified, 82 updated, 27 active parser failures resolved; about
+  8.14 GB of original history preserved across updated instances. The earlier
+  canary was already patched. Results are bounded post-deployment checks.
+- Public payload: `docs/access-tracker-public-rollout-evidence.md`; only that
+  reviewed file was submitted. No node identities, addresses, private paths,
+  credentials, runtime hashes, raw queries/logs or private attachments included.
+- Counts cross-checked against the provisioner report; privacy checks passed;
+  GitHub read-back matches the approved local file exactly. No fleet or sibling
+  workspace modifications. PR code still contains only source fix and tests.
+- Details: `docs/access-tracker-log-notes.md` and completed work order
+  `docs/work-orders/completed/20260921T150427Z-access-tracker-public-evidence.md`.
+
 ## 2026-09-20: On-Demand AccessTracker Fleet Repair Handoff
 
 Documentation/artifact boundary only; Java fix remains `466e57146` / PR 831.
