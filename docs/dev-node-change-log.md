@@ -16,11 +16,44 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-22: Blacklist Test Diagnostics And Actions Submitted Upstream
+
+PR: https://github.com/yacy/yacy_search_server/pull/834
+Accepted dev commits: `b41f7f185` and `e5632532a`. Isolated PR commit: `f1eb2d107`.
+Local documentation checkpoint: `Record blacklist test upstream PR`.
+
+- PR is open and ready for review. Public read-back confirms one commit, eight
+  files, +912/-29 and the exact reviewed description. Only blacklist-test matching,
+  filenames, native edit, confirmed scoped deletion, focus re-test and tests are
+  included. No other dev work, private notes or operational identifiers.
+- Files: `htroot/BlacklistTest_p.html`, `htroot/js/BlacklistTest.js`,
+  `source/net/yacy/htroot/BlacklistTest_p.java`, repository `Blacklist.java` and
+  `BlacklistDiagnostics.java`, and three matching/diagnostic/page test classes.
+  Existing Bootstrap Glyphicons supply the icons; no new external dependency.
+- Current upstream integration at `de973ca4444912ecfe8682dedc9e14842f8a4d57`:
+  application compilation and JavaScript syntax check pass; all 29 focused tests
+  pass. `ant compileTest` fails with the identical 89 error messages on untouched
+  upstream and the integration: unavailable Solr classes in test compilation and
+  a stale `CrawlProfile` constructor call in `HostBalancerTest`. Those unrelated
+  tests/build settings remain unchanged; the full suite is not claimed passing.
+- Publication uses shared ancestor `94e8ac3b5` without resetting fork master or
+  widening token scopes. The upstream merge tree equals the tested integration
+  tree `67406f6192e83ae1af80a7f22899cf5cf4d1b2ec`. GitHub reports mergeable;
+  both `build` and `build-and-release` passed on the post-publication check.
+  GitHub merge status is CLEAN; this is not upstream approval or a merge.
+- No deployment, service restart, rule/index mutation or runtime changes in this
+  submission task. Accepted dev verification remains documented below.
+- Evidence and isolated worktrees: `backups/blacklist-test-pr-20260922T025721Z/`.
+  Public body includes focused reproduction commands and the full-suite caveat.
+  [Topic notes](blacklist-test-notes.md); catalog U3 updated. Work order:
+  `20260922T025721Z-blacklist-test-pr.md` under `docs/work-orders/`.
+
 ## 2026-09-22: Attribute Blacklist Matches And Offer Scoped Actions
 
-Patch boundary: `Attribute blacklist matches and add rule actions`, following
+Patch boundary: `e5632532a`, `Attribute blacklist matches and add rule actions`, following
 `b41f7f185`. User verified all new functions, including edits and deletions,
-on September 22, 2026. No upstream PR or fleet changes.
+on September 22, 2026. No upstream PR or fleet changes at that stage; submission
+is recorded above.
 
 - Blacklist Test now attributes each source entry to its active file and purposes.
   Duplicate files/spellings remain distinct; missing sources get warnings instead

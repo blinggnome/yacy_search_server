@@ -477,9 +477,15 @@ cache-only blocks and unavailable sources are explicitly identified. Normal
 crawl/search matching is unchanged; manual rule changes use native reload.
 
 **Evidence:** original display user-tested, checkpoint `b41f7f185`. Attribution
-passed 23 tests before actions were added; the full set now passes 29. Dev
-deployment verification is recorded in the change log. **Upstream:** local dev
-testing only; not part of an existing PR. [Details](blacklist-test-notes.md).
+passed 23 tests before actions were added; the full set now passes 29. User
+accepted editing and deletion in checkpoint `e5632532a`. Current-upstream
+application compilation and 29 focused tests pass; unrelated full-suite
+compilation errors were reproduced on untouched upstream. Dev deployment
+verification is recorded in the change log. **Upstream:**
+[PR 834](https://github.com/yacy/yacy_search_server/pull/834) is open and ready
+for review, containing only eight feature files in commit `f1eb2d107`.
+Both GitHub CI checks passed. Existing bundled icons are reused with no new
+external dependency. [Details](blacklist-test-notes.md).
 
 ## Engineering Improvements Around The Node
 

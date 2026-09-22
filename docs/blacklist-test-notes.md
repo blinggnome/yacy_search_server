@@ -131,8 +131,32 @@ browser requests were intercepted, not live mutations. Screenshots at 1280 and
 has no horizontal overflow. Final JAR/template/JS hashes match local artifacts.
 User accepted all new functions, including editing and deletion, on September 22,
 2026. The 29 focused tests were re-run successfully for the accepted checkpoint,
-`Attribute blacklist matches and add rule actions`. Upstream submission remains
-a separate user decision.
+`e5632532a`, `Attribute blacklist matches and add rule actions`.
+
+### Upstream Submission
+
+[PR 834](https://github.com/yacy/yacy_search_server/pull/834) was opened and made
+ready for review on September 22, 2026, after user acceptance. The isolated
+commit `f1eb2d107` contains only eight feature source/template/test files,
+combining the accepted `b41f7f185` and `e5632532a` changes. No private project
+notes or other dev features are included. Icons reuse YaCy's bundled Bootstrap
+Glyphicons; `htroot/js/BlacklistTest.js` is local code, not an external dependency.
+
+Tested integration with upstream `de973ca44` passes `ant -quiet compile`, the
+JavaScript syntax check and all 29 focused JUnit tests. Full `ant compileTest`
+reproduces identical 89 errors on both untouched upstream and the integration:
+missing Solr classes in test compilation and an outdated `CrawlProfile`
+constructor call in `HostBalancerTest`. Focused tests were explicitly compiled
+with `javac --release 17` and classpath `build/classes/java/main:lib/*:libt/*`;
+the complete commands are in the PR body. No unrelated build repair is included.
+
+Public files, one-commit boundary and exact body were read back and verified.
+GitHub reported mergeable; both `build` and `build-and-release` passed on the
+post-publication check, with merge status CLEAN. This is not upstream acceptance
+or a merge, and CI success does not erase the separate local full-suite caveat.
+No server deployment/restart was performed for submission. Ignored local
+evidence, source backups and worktrees are under
+`backups/blacklist-test-pr-20260922T025721Z/`.
 
 ### Restart Observation
 
