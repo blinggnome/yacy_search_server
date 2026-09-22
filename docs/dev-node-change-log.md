@@ -16,6 +16,40 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-22: Show Matching Rules In Blacklist Test
+
+Patch boundary: `Show matching active rules in blacklist test`; uncommitted
+pending user confirmation on dev. No upstream PR or fleet rollout.
+
+- `BlacklistTest_p.html` now shows every matching active host/path pattern with
+  the purposes it applies to. Duplicate patterns share one sorted row. Existing
+  blocked categories remain, with a separate warning for cache-only blocks.
+- `Blacklist.getMatchingRules` reuses the real host/path matcher without changing
+  normal crawl/search matching or the URL hash cache. Loaded normalized patterns
+  are shown; the engine does not retain source blacklist filenames.
+- Handler/template rendering preserves percent escapes, plus signs and regex
+  backslashes, escapes HTML, and provides column tooltips and wrapping rule text.
+- `ant compileTest` and 16 focused JUnit tests pass. Packaged runtime tests pass;
+  exactly two JAR entries changed with all 1,652 others byte-identical.
+- Dev-only install completed at 01:11:12 UTC. Runtime JAR, Java sources and HTML
+  backed up together under
+  `/opt/yacy-dev/backups/blacklist-match-20260922T010707Z/`. Standard instance
+  remains inactive/disabled and untouched. HTTP 200 verified after startup;
+  authenticated tests returned two overlapping rules, no match and invalid input
+  correctly, without servlet errors. Deployed source/template hashes match local.
+- Restart observation: existing two-minute stop timeout was reached; startup
+  rebuilt the large existing HTTP cache before opening the web port, about
+  twelve minutes after start. No second restart or manual cache/index repair.
+  Review graceful-stop allowance before the next busy-node deployment.
+- No blacklist edits, activation changes, cache clears or index operations.
+  Local backups/evidence: `backups/blacklist-match-details-20260922/`.
+- Chrome captured-response checks at 1280/390 px show both rules and purposes,
+  working tooltips and wrapping long patterns; existing mobile form overflow is
+  unchanged. Temporary browser and fixture server stopped after verification.
+- Behavior, tests and rollback: [blacklist test notes](blacklist-test-notes.md).
+  Added catalog entry U3; work order
+  `docs/work-orders/completed/20260922T005313Z-blacklist-match-details.md`.
+
 ## 2026-09-21: Crawl-Start Button Submitted Upstream
 
 PR: https://github.com/yacy/yacy_search_server/pull/832

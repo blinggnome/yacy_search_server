@@ -3,6 +3,11 @@
   <head>
     <title>YaCy '#[clientname]#': Blacklist Test</title>
     #%env/templates/metas.template%#
+    <style type="text/css">
+      .blacklistMatches { width: 100%; table-layout: fixed; }
+      .blacklistMatches th:first-child { width: 75%; }
+      .blacklistMatches code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+    </style>
   </head>
   <body id="Blacklist">
     #%env/templates/header.template%#
@@ -30,6 +35,27 @@
               #(listedinsearch)#::<li>Search</li>#(/listedinsearch)#
               #(listedinsurftips)#::<li>Surftips</li>#(/listedinsurftips)#
             </ul>
+            #(matchdetails)#
+              <p>No matching active rules.</p>
+            ::
+              <h3>Matching rules (#[count]#)</h3>
+              <table class="table table-striped blacklistMatches">
+                <thead>
+                  <tr>
+                    <th scope="col" title="Matching active host/path pattern in the form loaded by YaCy, after normalization.">Rule</th>
+                    <th scope="col" title="Blacklist purposes for which this rule matches the tested URL.">Used for</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  #{rows}#
+                  <tr><td><code>#[rule]#</code></td><td>#[types]#</td></tr>
+                  #{/rows}#
+                </tbody>
+              </table>
+            #(/matchdetails)#
+            #(cachedonly)#::
+              <p class="alert alert-warning">The block for #[types]# is cached; no current rule matched.</p>
+            #(/cachedonly)#
           </div>
           ::
           <br /><br />

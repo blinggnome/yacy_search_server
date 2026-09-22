@@ -466,6 +466,18 @@ for transparent rate limits, explicit retry responses and limits on search-led
 crawl amplification instead. Normal direct index/export interfaces are not
 automatically protected by a result-rendering hook.
 
+### U3. Explain Why A URL Is Blacklisted
+
+Added September 22, 2026, after the catalog's source checkpoint above:
+`BlacklistTest_p.html` lists all matching active rules and the purposes they
+apply to, rather than only reporting that a URL is blocked. Identical rules
+are grouped, and cache-only blocks are distinguished from current rule matches.
+This is a diagnostic tool, not a change to crawl/search blocking behavior.
+
+**Evidence:** compile gate and 16 focused matcher/template tests pass. Dev
+deployment verification is recorded in the change log. **Upstream:** local dev
+testing only; not part of an existing PR. [Details](blacklist-test-notes.md).
+
 ## Engineering Improvements Around The Node
 
 These make development and rollout safer; they are not new crawler features.

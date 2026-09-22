@@ -32,6 +32,10 @@
 package net.yacy.htroot;
 
 import java.net.MalformedURLException;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 import net.yacy.cora.document.id.DigestURL;
 import net.yacy.cora.protocol.RequestHeader;
@@ -67,31 +71,28 @@ public class BlacklistTest_p {
                 prop.putHTML("url",testurl.toNormalform(false));
                 prop.putHTML("testlist_url",testurl.toNormalform(false));
                 boolean isblocked = false;
-
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.CRAWLER, testurl)) {
-                    prop.put("testlist_listedincrawler", "1");
-                    isblocked = true;
+                final Map<String, Set<String>> matchingRules = new TreeMap<>();
+                final Set<String> cachedOnly = new TreeSet<>();
+                for (final BlacklistType type : BlacklistType.values()) {
+                    final boolean listed = Switchboard.urlBlacklist.isListed(type, testurl);
+                    final Set<String> rules = Switchboard.urlBlacklist.getMatchingRules(type, testurl);
+                    final String purpose = type == BlacklistType.CRAWLER ? "Crawling"
+                            : type == BlacklistType.DHT ? "DHT"
+                            : type.name().charAt(0) + type.toString().substring(1);
+                    if (listed) {
+                        prop.put("testlist_listedin" + type.toString(), "1");
+                        isblocked = true;
+                        if (rules.isEmpty()) {
+                            cachedOnly.add(purpose);
+                        }
+                    }
+                    for (final String rule : rules) {
+                        matchingRules.computeIfAbsent(rule, key -> new TreeSet<>()).add(purpose);
+                    }
                 }
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.DHT, testurl)) {
-                    prop.put("testlist_listedindht", "1");
-                    isblocked = true;
-                }
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.NEWS, testurl)) {
-                    prop.put("testlist_listedinnews", "1");
-                    isblocked = true;
-                }
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.PROXY, testurl)) {
-                    prop.put("testlist_listedinproxy", "1");
-                    isblocked = true;
-                }
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.SEARCH, testurl)) {
-                    prop.put("testlist_listedinsearch", "1");
-                    isblocked = true;
-                }
-                if (Switchboard.urlBlacklist.isListed(BlacklistType.SURFTIPS, testurl)) {
-                    prop.put("testlist_listedinsurftips", "1");
-                    isblocked = true;
-                }
+                putMatchingRules(prop, matchingRules);
+                prop.put("testlist_cachedonly", cachedOnly.isEmpty() ? 0 : 1);
+                prop.putHTML("testlist_cachedonly_types", String.join(", ", cachedOnly));
 
                 if (!isblocked) {
                     prop.put("testlist_isnotblocked", "1");
@@ -105,6 +106,19 @@ public class BlacklistTest_p {
             prop.putHTML("url", "http://");
         }
         return prop;
+    }
+
+    static void putMatchingRules(final serverObjects prop, final Map<String, Set<String>> rules) {
+        prop.put("testlist_matchdetails", rules.isEmpty() ? 0 : 1);
+        prop.put("testlist_matchdetails_count", rules.size());
+        int row = 0;
+        for (final Map.Entry<String, Set<String>> entry : rules.entrySet()) {
+            final String prefix = "testlist_matchdetails_rows_" + row + "_";
+            prop.putUrlEncodedHTML(prefix + "rule", entry.getKey());
+            prop.putHTML(prefix + "types", String.join(", ", entry.getValue()));
+            row++;
+        }
+        prop.put("testlist_matchdetails_rows", row);
     }
 
 }
