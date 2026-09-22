@@ -16,10 +16,52 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-22: Attribute Blacklist Matches And Offer Scoped Actions
+
+Patch boundary: `Attribute blacklist matches and add rule actions`, following
+`b41f7f185`. User verified all new functions, including edits and deletions,
+on September 22, 2026. No upstream PR or fleet changes.
+
+- Blacklist Test now attributes each source entry to its active file and purposes.
+  Duplicate files/spellings remain distinct; missing sources get warnings instead
+  of guessed attribution. Original source text is retained for editing/deletion.
+- Edit opens the existing selected-rule editor in a new tab/window. Returning
+  focus re-tests the URL. Delete requires a separate warning and consent checkbox,
+  administrator authentication, POST, token and current file revision. It removes
+  only the selected source spelling from the named file, reloads native blacklists
+  and redirects to a fresh test. No rule removal via GET or silent stale deletion.
+- Changes: `BlacklistDiagnostics.java`, `BlacklistTest_p.java`, its HTML and new
+  `htroot/js/BlacklistTest.js`; diagnostic/page tests. Matching hot path and native
+  editor unchanged. Bare-host source entries without `/path` have no actions.
+- Attribution gate: 23 passing tests before continuing. Full gate: `ant compileTest`
+  and 29 tests passing, including packaged runtime. One JAR class replaced, three
+  added, 1,653 unrelated entries byte-identical.
+- Local backup `backups/blacklist-rule-actions-20260922T014701Z/`; remote backup
+  `/opt/yacy-dev/backups/blacklist-actions-20260922T014701Z/`. Dev-only deployment
+  and live verification tracked in the corresponding work order; production
+  remains untouched. Restore saved files plus remove recorded new files to roll back.
+- [Behavior and limitations](blacklist-test-notes.md); catalog U3 updated.
+- Deployed at 02:09:08 UTC; web-ready HTTP 200 verified. Runtime artifact hashes
+  match local. Synthetic live tests passed attribution, confirmation/cancel,
+  stale/invalid/replayed requests, scoped deletion with duplicate-file blocking,
+  and native edit/save. Fixtures and activation entries removed; unauthenticated
+  administrator-page request returns HTTP 401. Chrome intercepted-response checks
+  pass new-tab behavior, consent/cancel and layout at 1280/390 px. Final template
+  mobile adjustment installed without a restart; all 29 tests still pass.
+- Initial installer aborted before writes when direct API shutdown triggered
+  systemd auto-restart via a failing second ExecStop. The successful installer
+  used service-managed stop with a temporary runtime 900-second allowance; that
+  override was removed and original two-minute timeout verified restored. No
+  cache/index modifications or standard-service changes.
+- Acceptance checkpoint: all 29 focused tests re-passed. Auto-retest uses browser
+  blur/focus events after Edit, not polling or editor-close detection. Switching
+  back without closing also re-tests once, even if no change was saved; it uses
+  a fresh GET rather than resubmitting the editor POST.
+
 ## 2026-09-22: Show Matching Rules In Blacklist Test
 
-Patch boundary: `Show matching active rules in blacklist test`; uncommitted
-pending user confirmation on dev. No upstream PR or fleet rollout.
+Patch boundary: `b41f7f185`, `Show matching active rules in blacklist test`;
+user confirmed working, committed and pushed. No upstream PR or fleet rollout.
 
 - `BlacklistTest_p.html` now shows every matching active host/path pattern with
   the purposes it applies to. Duplicate patterns share one sorted row. Existing

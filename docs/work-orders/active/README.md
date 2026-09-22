@@ -6,5 +6,6 @@ Revalidate uncertain live state before repeating any command.
 
 | Work order | Status | Next action |
 | --- | --- | --- |
+| None | - | No active work orders |
 
 [Lifecycle and template](../README.md) | [Completed archive](../completed/README.md)

@@ -470,11 +470,14 @@ automatically protected by a result-rendering hook.
 
 Added September 22, 2026, after the catalog's source checkpoint above:
 `BlacklistTest_p.html` lists all matching active rules and the purposes they
-apply to, rather than only reporting that a URL is blocked. Identical rules
-are grouped, and cache-only blocks are distinguished from current rule matches.
-This is a diagnostic tool, not a change to crawl/search blocking behavior.
+apply to, rather than only reporting that a URL is blocked. Follow-up work adds
+source filenames, native Edit in a new tab/window, and confirmed file-scoped
+Delete with stale-selection protection. Copies in different files are separate;
+cache-only blocks and unavailable sources are explicitly identified. Normal
+crawl/search matching is unchanged; manual rule changes use native reload.
 
-**Evidence:** compile gate and 16 focused matcher/template tests pass. Dev
+**Evidence:** original display user-tested, checkpoint `b41f7f185`. Attribution
+passed 23 tests before actions were added; the full set now passes 29. Dev
 deployment verification is recorded in the change log. **Upstream:** local dev
 testing only; not part of an existing PR. [Details](blacklist-test-notes.md).
 
