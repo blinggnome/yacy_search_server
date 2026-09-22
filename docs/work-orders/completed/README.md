@@ -5,6 +5,7 @@ the evidence and limitations; an archive entry alone does not imply success.
 
 | Closed (UTC) | Work order | Outcome | Result |
 | --- | --- | --- | --- |
+| 2026-09-22 | [Blacklist test upstream PR](20260922T025721Z-blacklist-test-pr.md) | succeeded | PR 834 ready; eight feature files only; application build, 29 focused tests and both GitHub checks pass; existing full-suite compilation errors reproduced on pristine upstream |
 | 2026-09-22 | [Blacklist attribution and actions](20260922T014701Z-blacklist-rule-actions.md) | succeeded | Filename attribution verified first; native edit and confirmed scoped deletion on dev; 29 tests, synthetic live workflow and browser checks pass; user accepted edits and deletions |
 | 2026-09-22 | [Blacklist test matching rules](20260922T005313Z-blacklist-match-details.md) | succeeded | All matching rules/purposes shown on dev; 16 tests and live cases pass; user accepted; committed/pushed b41f7f185 |
 | 2026-09-21 | [Crawl-start button PR](20260921T230257Z-crawl-start-button-pr.md) | succeeded | PR 832 ready; one added template line only; identical submits and unchanged overflow verified at three widths |

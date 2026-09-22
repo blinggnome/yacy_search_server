@@ -2,10 +2,10 @@
 
 - ID: `20260922T025721Z-blacklist-test-pr`
 - Created: `2026-09-22T02:57:21Z`
-- Last Updated: `2026-09-22T03:17:21Z`
+- Last Updated: `2026-09-22T03:19:58Z`
 - Owner: YaCy dev builder
-- Status: active
-- Outcome: not yet determined
+- Status: closed
+- Outcome: succeeded
 
 ## Request And Definition Of Done
 
@@ -30,19 +30,20 @@ local Git/documentation current without including unrelated changes.
 - [x] [verified] Review feature boundary, current upstream and contribution rules.
 - [x] [verified] Prepare isolated patch and validate current-upstream integration.
 - [x] [verified] Publish and verify PR files/body/commits/review state/CI.
-- [ ] [running] Update local documentation, commit/push and archive work order.
+- [x] [verified] Update local documentation, commit/push and archive work order.
 
 ## Current State And Next Action
 
-- At start, main branch yacy-space-abuse-message was synchronized with origin at
-  e5632532a; unrelated dirty paths remain protected. Local documentation changes
-  now await their own checkpoint. gh authenticated with repo but no workflow
-  scope; used the previously verified shared-ancestor publication procedure.
+- Main documentation checkpoint 4d1f10d9e8b1378bfb02a0618ea880c5aaa9a3ec,
+  Record blacklist test upstream PR, is committed, pushed and remote-verified on
+  yacy-space-abuse-message. All five protected dirty files remain byte-identical;
+  index was empty after checkpoint. This file/index closeout is a separate
+  archive-only checkpoint. No source or runtime changes.
 - PR 834 is open and ready; public read-back matches the reviewed body exactly.
   Eight files, one commit, +912/-29. Both CI checks subsequently passed;
   GitHub reports MERGEABLE and CLEAN. Not claimed approved or merged.
-- Next Action: commit/push reviewed local documentation only, then archive this
-  work order with the verified checkpoint and push its closeout.
+- Next Action: maintainer review of PR 834; address feedback in the isolated
+  feature branch when requested. Do not merge or deploy without authorization.
 - Resume: inspect worktrees/branch/PR before any repeat push or PR creation.
 
 ## Runbooks, Commands And Evidence
@@ -99,15 +100,21 @@ local Git/documentation current without including unrelated changes.
 
 ## Delegation
 
-Git-only helper 01a0c70c-f7be-7aa1-b6cb-d079847832d5: upstream/fork discovery and isolated worktree/patch preparation complete;
-later publication after lead validation. No main-content edits or deployment.
-Lead owns source review, tests, PR narrative, scope verification and documentation.
+Git-only helper 01a0c70c-f7be-7aa1-b6cb-d079847832d5 completed isolated preparation,
+publication and exact-path documentation checkpoint/push. Lead performed source
+review, tests, public narrative, scope verification, documentation and closeout.
+No delegated source edits or deployment.
 
 ## Closeout
 
-- Closed: not closed
-- Outcome: pending
-- Verified results: pending
-- Limitations: pending
-- Follow-up: maintainer review after successful publication
+- Closed: 2026-09-22T03:19:58Z
+- Outcome: succeeded
+- Verified results: PR 834 ready, feature-only public diff/body verified, both CI
+  checks pass, application build and 29 focused tests pass, documentation pushed.
+  Local original dirty state preserved. No server changes.
+- Limitations: full ant compileTest still fails identically on pristine upstream;
+  no claim of full-suite success or upstream acceptance. Live/browser workflow
+  evidence is from accepted dev testing, not a new current-upstream deployment.
+- Follow-up: upstream maintainers own review; this workspace owns any requested
+  patch revisions. No outstanding deployment, test process or Git publication job.
 - Reusable knowledge: local project documents; no managed-memory write requested
