@@ -6,6 +6,6 @@ Revalidate uncertain live state before repeating any command.
 
 | Work order | Status | Next action |
 | --- | --- | --- |
-| [20260925T163717Z-upstream-sync](20260925T163717Z-upstream-sync.md) | Blocked on GitHub scope | Local merge/tests complete; user refreshes workflow scope, then verify fork push |
+| None | - | - |
 
 [Lifecycle and template](../README.md) | [Completed archive](../completed/README.md)

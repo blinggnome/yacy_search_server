@@ -5,6 +5,7 @@ the evidence and limitations; an archive entry alone does not imply success.
 
 | Closed (UTC) | Work order | Outcome | Result |
 | --- | --- | --- | --- |
+| 2026-09-25 | [Custom fork upstream synchronization](20260925T163717Z-upstream-sync.md) | succeeded | Upstream b50b76bd merged with custom work preserved; build and 190 focused tests pass; baseline full-suite limits documented; fork push verified after workflow authorization; no deployment |
 | 2026-09-25 | [Upstream synchronization policy](20260925T155404Z-upstream-sync-policy.md) | succeeded | AGENTS backed up and expanded with automatic checkpoints, isolated validation and explicit publication/deployment gates; prior text preserved; independent review and memory read-back pass; no actual sync |
 | 2026-09-25 | [PR 834 current integration](20260925T152746Z-pr834-current-integration.md) | succeeded | Current pinned merge builds and passes 41 focused tests; pristine baseline passes 12; full compilation failures identical; sanitized evidence posted and read back on PR 834 |
 | 2026-09-24 | [Blacklist PR audit](20260924T063351Z-blacklist-pr-audit.md) | succeeded | Exact accepted feature verified; fresh application build and 29 tests pass; missing required help/localization found; newest upstream merge not covered by prior green CI; no PR/source changes |

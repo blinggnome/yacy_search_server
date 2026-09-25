@@ -23,10 +23,11 @@ Each entry should answer:
   intended custom source deltas. AGENTS and search-renderer conflicts reviewed;
   accepted thread-evictor fix now matches upstream exactly.
 - Merge subject: `Merge upstream master b50b76bd into the custom YaCy fork`.
-  Merge `975a92f51` is promoted locally. Work order
-  `20260925T163717Z-upstream-sync.md` records revisions and publication state.
-  GitHub push is blocked until OAuth workflow scope is granted; no workflows
-  were removed. Main checkout rebuilt cleanly with prior build/lib backed up.
+  Merge `975a92f51` is promoted and published to the fork. The
+  [completed work order](work-orders/completed/20260925T163717Z-upstream-sync.md)
+  records exact revisions and the verified publication receipt at `88c93d50e`.
+  Initial OAuth workflow-scope rejection resolved by the user's authorization;
+  no workflows removed. Main checkout rebuilt with prior build/lib backed up.
 - Application build and 190 focused tests pass; browser form checks pass.
   Full compileTest remains failing: 89 upstream errors plus five matching
   missing-Solr-classpath errors in our metadata tests, which pass in isolation.

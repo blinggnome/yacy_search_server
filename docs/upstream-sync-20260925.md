@@ -23,12 +23,17 @@ History is merged, not rewritten. Existing contribution branches and local
 worktree; do not force-reset a published branch or copy an old jar over a newer
 runtime. No runtime rollback is needed for this source-only operation.
 
-The local development branch was fast-forwarded to that merge. GitHub rejected
-publication because the login lacks OAuth `workflow` scope for upstream's
-GitHub Actions changes. The user was asked to run
-`gh auth refresh -h github.com -s workflow`; no workflow was removed or altered
-to bypass this requirement. Until the work order records a successful push,
-the source synchronization is local only.
+The local development branch was fast-forwarded to that merge. The first push
+was rejected because the login lacked OAuth `workflow` scope for upstream's
+GitHub Actions changes. After the user completed
+`gh auth refresh -h github.com -s workflow`, the scope was verified and the
+ordinary, non-forced push succeeded on 2026-09-25 at approximately 17:45 UTC.
+`git ls-remote origin refs/heads/yacy-space-abuse-message` confirmed published
+HEAD `88c93d50ed7606a719211d8b90059f65b2f5acb7`, containing the tested merge plus
+documentation only. Upstream master still matched the pinned revision. No
+workflow was removed or altered to bypass authorization. The
+[completed work order](work-orders/completed/20260925T163717Z-upstream-sync.md)
+records the publication receipt; its closeout commit is documentation only.
 
 The main checkout was rebuilt successfully after moving its old generated
 `build/` and `lib/` intact into the timestamped backup. This avoids old compiled
