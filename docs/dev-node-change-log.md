@@ -16,6 +16,148 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-25: Establish Standing Upstream Synchronization Workflow
+
+- Local `AGENTS.md` now defines clean upstream reference, preserved custom
+  development history and isolated contribution branches. Agent-driven drift
+  checks occur at substantial-session, feature, contribution and release
+  checkpoints; integrations use separate worktrees and durable work orders.
+- Validation covers the whole custom candidate, distinguishes fresh baseline
+  failures, and pins exact trees. Dirty work, conflict decisions, stale refs,
+  already-upstreamed fixes, help/localization and compaction recovery are explicit.
+- No unattended scheduler, destructive history rewrite or automatic deployment.
+  Shared-branch promotion/push needs explicit approval unless already scoped;
+  read-only tasks exclude all Git writes. Dev canaries/fleet rollout retain
+  separate approval, backup and health gates. Minimal PRs need not wait for a
+  deferred full-fork integration.
+- Pre-edit originals: `backups/upstream-sync-policy-20260925T155404Z/`.
+  Existing memory and safety guidance preserved. Documentation only: no actual
+  synchronization, branch switch, source changes, Git commit/push or server work.
+- Work order: `20260925T155404Z-upstream-sync-policy.md`. This installs the
+  strategy; the first full custom-branch integration remains separate work.
+- Six Sequential Thinking steps and independent review completed; 17 written
+  scenario paths and preservation checks passed. Original AGENTS content remains
+  byte-identical; policy saved/read back in Vestige. These verify instructions,
+  not an actual synchronization or guaranteed future agent compliance.
+
+## 2026-09-25: Validate Blacklist PR 834 With Current Upstream
+
+- [Validation record](pr834-current-upstream-validation-20260925.md) pins master
+  `b50b76bd`, PR head `f1eb2d107`, and GitHub merge `5cae18c88`. Fresh detached
+  baseline and integration builds pass; integration passes 41 focused tests,
+  including the 12 ServletResource/FileUtils tests also passing on baseline.
+- Full compileTest still fails equally on both: 89 errors and all 432 normalized
+  diagnostic lines identical. No integration regression found in scoped checks;
+  no source fixes, runtime deployment, PR branch rewrite or new CI run.
+- [Sanitized reviewer evidence](https://github.com/yacy/yacy_search_server/pull/834#issuecomment-5835080395)
+  posted and read back exactly. Reproduction commands, versions, baseline
+  comparison and remaining limits included; help/localization remains separate.
+- Work order `20260925T152746Z-pr834-current-integration.md`; ignored evidence in
+  `backups/pr834-current-integration-20260925T152746Z/`; results saved to Vestige.
+
+## 2026-09-24: Audit Blacklist PR 834
+
+- [Independent audit](blacklist-pr-audit-20260924.md) verified published feature
+  files exactly match the accepted checkpoint, with no unrelated feature or
+  external dependency added. No runtime defect found; the PR is missing the
+  help/localization changes required by upstream's contribution instructions.
+- Fresh application compilation, 29 focused tests, JavaScript syntax and six
+  stubbed event scenarios pass. Full compileTest reproduces 89 identical error
+  headers on pristine upstream and the original integration.
+- Existing green CI covers the original integration, not the newer upstream
+  merge. Follow-up should complete help/localization and validate the newest
+  integration. No source/PR/runtime/Git changes; review documentation only.
+- Work order: `20260924T063351Z-blacklist-pr-audit.md`. Ignored evidence is under
+  `backups/blacklist-pr-audit-20260924T063351Z/`; findings saved to Vestige.
+
+## 2026-09-24: Apply Shared Native-Memory Policy
+
+- User-approved common `## Memory` block installed in global
+  `/home/programmer/.codex/AGENTS.md` and this workspace's `AGENTS.md`.
+  Capture uses the accurate-and-safe threshold, retrieval precedes rediscovery,
+  native ingestion/retention replace manual bookkeeping, and save outcomes and
+  usefulness feedback remain agent responsibilities. No mandatory per-fact
+  duplicate ledger, manual merge or second-store copy.
+- Both existing files were copied and byte-compared before editing. Backups:
+  `backups/memory-policy-20260924T004853Z/global-AGENTS.before.md` and
+  `project-AGENTS.before.md`. Global candidate was staged and reviewed locally;
+  its original was rechecked unchanged before authorized installation.
+- Verified matching shared blocks and unchanged surrounding project text. Only
+  other global change is the heading `Sequential Thinking` to `Planning`, with
+  the same body. Codebase guidance, operational safety, permission boundaries,
+  local Git ownership and the continuity-stop rule remain intact.
+- [Sibling-owner handoff](shared-memory-policy-handoff.md) identifies the exact
+  installed policy and backup/reconciliation steps; sibling files/Git untouched.
+  No application changes/tests, server operations, MCP reinstallation or runtime
+  configuration changes. Git changes remain uncommitted with prior work intact.
+- Work order: `20260924T004853Z-shared-memory-policy.md`; durable policy captured
+  in Vestige and a dated Codex extension note. Future adherence is not guaranteed
+  by instruction-text checks alone.
+
+## 2026-09-24: Review Vestige And Upgrade To 3.0.0
+
+- [Review and upgrade record](vestige-review-and-upgrade-20260924.md) compares
+  all six requested upstream documents, installed contracts and native memory
+  responsibilities. The previous workflow proposal is marked historical; its
+  routine manual bookkeeping should not be implemented unchanged.
+- User-local Vestige upgraded from 2.3.0 to 3.0.0. Private paired package/database
+  backups and aggregate probe evidence are under
+  `~/.local/state/vestige-upgrades/20260924T001611Z/`.
+- Copied-store rehearsal and live checks passed: 123 memories preserved with
+  zero changed fact records, SQLite integrity OK, embeddings ready with 100%
+  coverage, and known-workspace recall/session_start successful. Existing data
+  location and Codex configuration unchanged; no YaCy runtime/code or fleet work.
+- Post-restart verification at 00:37 UTC: connected catalog 3.0.0, existing
+  memories retrieved, new upgrade-procedure memory saved and recalled. Shared
+  instruction changes remain separate; no Git checkpoint requested. Rollback
+  requires the matching saved binary and database together.
+- [Completed work order](work-orders/completed/20260924T001052Z-vestige-design-review.md).
+
+## 2026-09-23: Plan Shared Memory Workflow Validation
+
+- [Memory workflow proposal](memory-workflow-plan.md) contains proposed shared
+  AGENTS text, capture/retrieval procedures, independent delivery tracking,
+  fallback, owner-mediated rollout and twenty behavioral acceptance scenarios.
+- Twelve Sequential Thinking steps included a provisional conclusion, explicit
+  sufficiency/omission challenges, counterexamples and revisions. Inspected the
+  current tool contracts and global startup configuration; checked official
+  instruction-loading and lifecycle-hook documentation.
+- Planning only: no proposed policy installed, global/sibling configuration
+  edited, memory cleanup performed, Git checkpoint created or YaCy code changed.
+  Fresh-session and cross-workspace validation remain implementation work.
+- Planning outcome and verification are in the
+  [completed work order](work-orders/completed/20260923T214350Z-memory-workflow-plan.md).
+
+## 2026-09-23: Clarify Proactive Memory And Retrieval Workflow
+
+Documentation-only change requested by the user; no YaCy code, runtime or
+service changes. Existing unrelated working-tree edits remain untouched.
+
+- `AGENTS.md` now explicitly records the standing request to save small verified
+  discoveries promptly, including successful command options and their
+  validation. Corrections may originate with the user or the agent; neither
+  should end as an unrecorded promise or wait for another reminder.
+- Follow-up clarification: the selection threshold is accuracy and safety, not
+  predicted importance or future reuse. Record concise discoveries even when
+  apparently trivial; retain privacy and transient-data safeguards. Recorded in
+  the dated extension note `20260923T213138Z-memory-accuracy-safety-threshold.md`.
+  Pre-edit backups for this refinement use `memory-threshold-20260923T213138Z`
+  in the filenames under `backups/`.
+- Retrieval order: Vestige first, Codex file-backed memory next, then runbooks
+  and graph-first implementation discovery if memory does not answer. Narrow
+  verification remains appropriate for facts that may have changed.
+- Removed project wording suggesting per-note approval for routine saving.
+  Retained secret exclusion, transient work-order separation, safe dated
+  extension notes rather than direct managed-file edits, and explicit reporting
+  of any actual higher-priority instruction or tool-access restriction.
+- User clarification was saved and copy-verified in the dated Codex extension
+  note `20260923T154027Z-proactive-memory-standing-request.md`. Existing managed
+  registry/history files and the older Vestige policy record were not rewritten;
+  the updated project file is the current statement of user intent.
+- Pre-edit backups: `backups/AGENTS-before-proactive-memory-20260923T154027Z.md`
+  and `backups/change-log-before-proactive-memory-20260923T154027Z.md`.
+  Reviewed the scoped diff and checked whitespace; no application tests needed.
+
 ## 2026-09-22: Blacklist Test Diagnostics And Actions Submitted Upstream
 
 PR: https://github.com/yacy/yacy_search_server/pull/834
