@@ -6,6 +6,6 @@ Revalidate uncertain live state before repeating any command.
 
 | Work order | Status | Next action |
 | --- | --- | --- |
-| None | - | - |
+| [Dev runtime upgrade](20260925T175946Z-dev-runtime-upgrade.md) | Active | Installed with verified backup; search validation unresolved; user choice on investigation or coherent rollback |
 
 [Lifecycle and template](../README.md) | [Completed archive](../completed/README.md)

@@ -16,6 +16,24 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-25: Deploy Synchronized Runtime To Dev; Search Gate Remains Open
+
+- [Deployment record](dev-runtime-upgrade-20260925.md): full custom build
+  `27152b94a` installed on Server2 `/opt/yacy-dev`, including Solr9.10.1 and
+  Jetty12/private-client bridge. Java21 already sufficient; no OS upgrade.
+- Complete546GiB cold backup verified before startup. Preserve the root-only
+  `/opt/yacy-dev-upgrade-20260925T175946Z` recovery directory; rollback needs
+  old runtime and matching old data together, not a jar-only downgrade.
+- HTTP/admin/auth/index/blacklist checks pass and indexing resumed. Existing
+  local helper scripts preserved; dependent crawl feeder restored. Standard
+  YaCy remains inactive/disabled and OpenSearch unchanged.
+- Browser local-search checks found intermittent missing rows; direct Solr is
+  fast while samples show result timeouts and disk-backed RWI waits. Regression
+  status unresolved. No search-code patch, rollback or fleet rollout performed.
+  [Work order](work-orders/active/20260925T175946Z-dev-runtime-upgrade.md) stays
+  active pending investigation/rollback choice. Do not claim complete validation.
+- Documentation checkpoint subject: `Document dev upgrade and unresolved search validation`.
+
 ## 2026-09-25: Integrate Current Upstream Into The Custom Fork
 
 - [Integration record](upstream-sync-20260925.md): isolated merge of upstream
