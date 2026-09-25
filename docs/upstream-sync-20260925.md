@@ -11,8 +11,9 @@ bridge service, fleet node or index was changed.
 - Merge base: `94e8ac3b5f9080489eae4ed9efa1e760a983857c`.
 - Candidate branch: `integration/upstream-20260925`, separate ignored worktree.
 - Merge subject: `Merge upstream master b50b76bd into the custom YaCy fork`.
-  Final commit/tree and publication receipts are in work order
-  `20260925T163717Z-upstream-sync.md`.
+  Merge commit: `975a92f51080f1d2a0f472366776de9844d4cf7a`; tree:
+  `6479492d7052a0d684b215dd7392844bc0d5ab3b`. Publication receipts are in
+  work order `20260925T163717Z-upstream-sync.md`.
 - Local recovery tag: `checkpoint/pre-upstream-sync-20260925` at `9b630a940`.
 - Timestamped source/documentation archives and conflict originals are under
   `backups/upstream-sync-20260925T163717Z/pre-change/` (ignored).
@@ -21,6 +22,18 @@ History is merged, not rewritten. Existing contribution branches and local
 `master` are unchanged. Recovery should start from the checkpoint in a separate
 worktree; do not force-reset a published branch or copy an old jar over a newer
 runtime. No runtime rollback is needed for this source-only operation.
+
+The local development branch was fast-forwarded to that merge. GitHub rejected
+publication because the login lacks OAuth `workflow` scope for upstream's
+GitHub Actions changes. The user was asked to run
+`gh auth refresh -h github.com -s workflow`; no workflow was removed or altered
+to bypass this requirement. Until the work order records a successful push,
+the source synchronization is local only.
+
+The main checkout was rebuilt successfully after moving its old generated
+`build/` and `lib/` intact into the timestamped backup. This avoids old compiled
+classes or dependencies contaminating the next build. No `ant clean` or DATA
+removal was performed. The main code graph was refreshed.
 
 ## What Was Retained
 
