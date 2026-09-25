@@ -16,6 +16,23 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
+## 2026-09-25: Integrate Current Upstream Into The Custom Fork
+
+- [Integration record](upstream-sync-20260925.md): isolated merge of upstream
+  `b50b76bd` into checkpoint `9b630a940`, preserving published history and all
+  intended custom source deltas. AGENTS and search-renderer conflicts reviewed;
+  accepted thread-evictor fix now matches upstream exactly.
+- Merge subject: `Merge upstream master b50b76bd into the custom YaCy fork`.
+  Work order `20260925T163717Z-upstream-sync.md` records final revisions and push.
+- Application build and 190 focused tests pass; browser form checks pass.
+  Full compileTest remains failing: 89 upstream errors plus five matching
+  missing-Solr-classpath errors in our metadata tests, which pass in isolation.
+- Backup tag `checkpoint/pre-upstream-sync-20260925`; timestamped file archives
+  under `backups/upstream-sync-20260925T163717Z/pre-change/`. Existing source
+  policies, unrelated untracked files and contribution branches preserved.
+- No deployment or server restart. Upstream Jetty/Solr/authentication changes
+  require a separate full-runtime dev canary, not an old jar-only rollout.
+
 ## 2026-09-25: Establish Standing Upstream Synchronization Workflow
 
 - Local `AGENTS.md` now defines clean upstream reference, preserved custom

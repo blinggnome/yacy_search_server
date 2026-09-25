@@ -5,7 +5,7 @@
     <title>YaCy '#[clientname]#': LLM Selection</title>
     #%env/templates/metas.template%#
   </head>
-  <body id="IndexControl" data-llm-service="#[llm_service]#" data-llm-hoststub="#[llm_hoststub]#" data-llm-apikey="#[llm_apikey]#" data-model-capabilities="#[model_capabilities]#">
+  <body id="IndexControl" data-llm-service="#[llm_service]#" data-llm-hoststub="#[llm_hoststub]#" data-llm-apikey="#[llm_apikey]#" data-model-capabilities="#[model_capabilities]#" data-service-num-ctx="#[service_num_ctx_json]#">
     #%env/templates/header.template%#
     #%env/templates/submenuAI.template%#
     <script>
@@ -53,12 +53,13 @@
         required: ["mood"]
       };
 
-      const PRODUCTION_MODEL_TOTAL_COLUMNS = 17;
+      const PRODUCTION_MODEL_TOTAL_COLUMNS = 18;
       const PRODUCTION_MODEL_MODEL_COLUMN_INDEX = 1;
+      const PRODUCTION_MODEL_MAX_TOKENS_COLUMN_INDEX = 4;
       const PRODUCTION_MODEL_USAGE_COLUMN_START = 5;
-      const PRODUCTION_MODEL_USAGE_COLUMN_END = 11; // including
-      const PRODUCTION_MODEL_FEATURE_COLUMN_START = 12;
-      const PRODUCTION_MODEL_FEATURE_COLUMN_END = 15; // including
+      const PRODUCTION_MODEL_USAGE_COLUMN_END = 12; // including
+      const PRODUCTION_MODEL_FEATURE_COLUMN_START = 13;
+      const PRODUCTION_MODEL_FEATURE_COLUMN_END = 16; // including
       const PRODUCTION_MODEL_ACTION_COLUMN_INDEX = PRODUCTION_MODEL_TOTAL_COLUMNS - 1;
       const PRODUCTION_MODEL_THINKING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START;
       const PRODUCTION_MODEL_TOOLING_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 1;
@@ -66,7 +67,8 @@
       const PRODUCTION_MODEL_FORMAT_COLUMN_INDEX = PRODUCTION_MODEL_FEATURE_COLUMN_START + 3;
       const PRODUCTION_MODEL_ENABLED_USAGE_COLUMNS = new Set([
         6,  // chat
-        11  // tldr
+        11, // tldr
+        12  // log-report
       ]);
       const PRODUCTION_MODEL_COLUMN_NAMES = [
         "service",
@@ -82,6 +84,7 @@
         "query",
         "qapairs",
         "tldr",
+        "logreport",
 
         "thinking",
         "tooling",
@@ -95,23 +98,17 @@
       let persistedModelCapabilities = {};
 
       const RECOMMENDED_MODELS = [
-        //["hf.co/tiiuae/Falcon-H1-0.5B-Instruct-GGUF:Q4_K_M",  " 0.50","0.5GB", "english-only minimalistic model for small devices", "Technology Innovation Institute, Dubai", "falcon-llm-license"],
-        //["llama3.2:1b-instruct-q4_K_M",                       " 0.10",  "2GB", "A good 1B model", "Meta", "llama3.2"],
-        ["qwen2.5:1.5b-instruct-q4_K_M",                      " 0.88",  "2GB", "Good small model for 1GB RAM", "Alibaba", "apache-2.0"],
-        ["llama3.2:3b-instruct-q4_K_M",                       " 0.66",  "3GB", "A good 3B model", "Meta", "llama3.2"],
-        //["qwen3-vl:2b-instruct-q4_K_M",                       " 0.73",  "3GB", "A very small vision-model, can understand what is sees in images"],
-        ["hf.co/unsloth/medgemma-4b-it-GGUF:Q4_K_M",          " 0.60",  "4GB", "Medical Knowledge and Vision", "Google", "health-ai-developer-foundations"],
-        ["olmo-3:7b-instruct-q4_K_M",                         " 2.22",  "4GB", "open and accessible training data, open-source training code", "allenai.org", "apache-2.0"],
-		["qwen3:4b-instruct-2507-q4_K_M",                     " 7.70",  "3GB", "a good 4B model", "Alibaba", "apache-2.0"],
-		["hf.co/janhq/Jan-v3-4B-base-instruct-gguf:Q4_K_M",   " 8.19", "6GB", "a brilliant 4B model, post-trained with large teacher from qwen3:4b", "jan.ai", "apache-2.0"],
-		["ministral-3:14b-instruct-2512-q4_K_M",              " 8.55", "10GB", "European flagship model, strong multilangual, vision, agentic", "mistral.ai", "apache-2.0"],
-		["olmo-3.1:32b-instruct-q4_K_M",                      "10.25",  "20GB", "open and accessible training data, open-source training code", "allenai.org", "apache-2.0"],
-		//["phi4:14b-q4_K_M",                                   " 5.24", "10GB", "Strong, made with synthetic data", "Microsoft", "mit"],
-		//["gemma3:27b-it-q4_K_M",                              " 4.81", "20GB", "Strong content safety, multilingual support in over 140 languages", "google.com", "gemma"],
-        //["qwen3-vl:30b-a3b-instruct-q4_K_M",                  "17.33", "22GB", "Very fast, exceptional good 30B model, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"],
-		["qwen3.5:9b-q4_K_M",                                 "18.37", "14GB", "multimodal, outstanding for its size, long-context 256K Tokens, strong instruction following model", "Alibaba", "apache-2.0"],
-		["hf.co/mradermacher/Ling-mini-2.0-GGUF:Q4_K_M",      "20.00", "20GB", "very fast 16B MoE model with 1.4B activated parameters per expert", "InclusionAI", "mit"],
-		["qwen3.5:35b-a3b-q4_K_M",                            "44.63", "25GB", "Very fast MoE, exceptional good 35B model with vision, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"]
+        ["qwen3:4b-instruct-2507-q4_K_M",                     " 7.70",  "3GB", "a good 4B model", "Alibaba", "apache-2.0"],
+        ["frob/qwen3.5-instruct:4b",                          " 8.52",  "4GB", "good model for its size, non-thinking version", "Alibaba", "apache-2.0"],
+        ["hf.co/InternScience/Agents-A1-4B-Q8_0-GGUF:Q8_0",   "24.34",  "6GB", "fine-tuned version of qwen3.5-instruct:4b; extreme benchmark gains using teacher model", "Intern Science, Shanghai Artificial Intelligence Laboratory", "apache-2.0"],
+        //["qwen3.5:9b-q4_K_M",                                 "18.37",  "7GB", "multimodal, outstanding for its size, long-context 256K Tokens, strong instruction following model", "Alibaba", "apache-2.0"],
+        ["gemma4:12b-it-qat",                                 "42.13",  "8GB", "Very mighty, very small model from Google", "Google", "apache-2.0"],
+        ["ministral-3:14b-instruct-2512-q4_K_M",              " 8.55", "10GB", "European model, strong multilangual, has vision, is agentic", "mistral.ai", "apache-2.0"],
+        ["hf.co/mradermacher/Ling-mini-2.0-GGUF:Q4_K_M",      "20.00", "10GB", "very fast 16B MoE model with 1.4B activated parameters per expert", "InclusionAI", "mit"],
+        ["olmo-3.1:32b-instruct-q4_K_M",                      "10.25", "19GB", "open and accessible training data, open-source training code", "allenai.org", "apache-2.0"],
+        ["qwen3.8:27b-mtp-q4_K_M",                            "57.42", "17GB", "Exceptional good 27B model with vision, ranking above GPT-4-turbo, GPT-4.1-nano, GPT-o1, GPT-4o-mini", "Alibaba", "apache-2.0"],
+        ["muse-glimmer:30b-q4_K_M-dflash",                    "55.55", "21GB", "Agent-first model from Meta, tuned for tool use, long tasks, and failure recovery", "Meta", "apache-2.0"],
+        ["qwen3.6:35b-a3b-mtp-q4_K_M",                        "45.91", "22GB", "Almost as good as the 27B model, but much faster", "Alibaba", "apache-2.0"]
       ];
 	  
       const MODEL_TABLE_HEADERS = ["Model", "Ranking", "Size", "Description", "Provider", "License", "Actions"];
@@ -126,7 +123,21 @@
 
       /***
        ***  API functions to access Ollama or OpenAI endpoints (list/load/delete models)
+       ***
+       ***  All endpoint calls are routed through the YaCy-internal admin passthrough
+       ***  proxy (see LLMAdminProxyServlet.java): instead of calling the LLM endpoint
+       ***  directly, the browser calls the same API path on YaCy itself (same-origin)
+       ***  and passes the target endpoint as hoststub parameter. This keeps endpoints
+       ***  reachable which are only visible from the YaCy server (remote YaCy
+       ***  installations), avoids CORS/mixed-content issues and lets YaCy inject the
+       ***  stored api_key server-side. The proxy requires admin authentication, which
+       ***  the browser already holds on this page.
        ***/
+
+      function proxyUrl(hoststub, path) {
+        const target = (hoststub || "").trim().replace(/\/+$/, "");
+        return `${path}?hoststub=${encodeURIComponent(target)}`;
+      }
 
       async function fetchJsonOrThrow(url, options = {}) {
         const response = await fetch(url, options);
@@ -220,7 +231,7 @@
       }
 
       async function deleteOllamaModel(hoststub, modelName) {
-        const response = await fetch(`${hoststub}/api/delete`, {
+        const response = await fetch(proxyUrl(hoststub, "/api/delete"), {
           method: "DELETE",
           headers: {"Accept": "application/json", "Content-Type": "application/json"},
           body: JSON.stringify({ model: modelName })
@@ -232,29 +243,67 @@
         }
       }
 
-      async function downloadOllamaModel(hoststub, modelName) {
-        const response = await fetch(`${hoststub}/api/pull`, {
+      async function downloadOllamaModel(hoststub, modelName, onProgress) {
+        // stream: true keeps bytes flowing so no idle timeout in the proxy chain
+        // kills the connection during long pulls; ollama continues a pull
+        // server-side even if this connection drops, so leaving the page is safe
+        const response = await fetch(proxyUrl(hoststub, "/api/pull"), {
           method: "POST",
-          headers: {"Accept": "application/json", "Content-Type": "application/json"},
-          body: JSON.stringify({ model: modelName, stream: false })
+          headers: {"Accept": "application/x-ndjson", "Content-Type": "application/json"},
+          body: JSON.stringify({ model: modelName, stream: true })
         });
         if (response.status !== 200) {
           const error = new Error(`Failed to download model ${modelName}`);
           error.status = response.status;
           throw error;
         }
-        const payload = await response.json().catch(() => null);
-        if (payload && payload.error) {
-          const error = new Error(payload.error);
-          error.status = response.status;
-          error.payload = payload;
-          throw error;
+        // the body is NDJSON: one progress object per line; errors arrive
+        // mid-stream as {"error": ...} lines even though the HTTP status is 200
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffered = "";
+        let lastPayload = null;
+        const consumeLine = (line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          let payload = null;
+          try {
+            payload = JSON.parse(trimmed);
+          } catch (parseError) {
+            return; // ignore malformed progress lines
+          }
+          if (payload.error) {
+            const error = new Error(payload.error);
+            error.status = response.status;
+            error.payload = payload;
+            throw error;
+          }
+          lastPayload = payload;
+          if (onProgress) onProgress(payload);
+        };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffered += decoder.decode(value, { stream: true });
+          const lines = buffered.split("\n");
+          buffered = lines.pop();
+          for (const line of lines) consumeLine(line);
         }
-        return payload;
+        buffered += decoder.decode();
+        consumeLine(buffered);
+        return lastPayload;
       }
 
       async function requestModelsForService(service, hoststub) {
-        return service === "OLLAMA" ? fetchJsonOrThrow(`${hoststub}/api/tags`) : fetchJsonOrThrow(`${hoststub}/v1/models`);
+        const url = service === "OLLAMA" ? proxyUrl(hoststub, "/api/tags") : proxyUrl(hoststub, "/v1/models");
+        const options = {};
+        const apikeyEl = document.getElementById("apikey");
+        const apikey = apikeyEl ? apikeyEl.value.trim() : "";
+        if (apikey) {
+          // for endpoints which are not saved yet the proxy cannot look up the key itself
+          options.headers = { "Authorization": `Bearer ${apikey}` };
+        }
+        return fetchJsonOrThrow(url, options);
       }
 
       function handleModelLoadError(service, error) {
@@ -458,6 +507,28 @@
         return activityId;
       }
 
+      function updateDownloadActivity(activityId, payload) {
+        const wrapper = downloadActivities.get(activityId);
+        if (!wrapper || !payload) return;
+        const progress = wrapper.querySelector("progress");
+        const subtitle = wrapper.querySelector(".download-activity-subtitle");
+        const status = payload.status || "";
+        if (progress && typeof payload.total === "number" && payload.total > 0
+            && typeof payload.completed === "number") {
+          progress.value = Math.min(100, (payload.completed / payload.total) * 100);
+        }
+        if (subtitle) {
+          let text = status || "Download in progress…";
+          if (typeof payload.total === "number" && payload.total > 0
+              && typeof payload.completed === "number") {
+            const percent = Math.min(100, (payload.completed / payload.total) * 100);
+            const mb = (bytes) => (bytes / (1024 * 1024)).toFixed(0);
+            text = `${status} — ${percent.toFixed(1)}% (${mb(payload.completed)} / ${mb(payload.total)} MB)`;
+          }
+          subtitle.textContent = text;
+        }
+      }
+
       function removeDownloadActivity(activityId) {
         const wrapper = downloadActivities.get(activityId);
         if (wrapper && wrapper.parentNode) {
@@ -504,6 +575,13 @@
         } else {
           apikeyInput.disabled = false;
         }
+      }
+
+      // Service dropdown handler: reset the hoststub to the service default, then
+      // reflect the resulting endpoint in the Services table.
+      function serviceChanged() {
+        setHoststub();
+        syncSelectedServiceRow();
       }
 
       function applyPresetInference() {
@@ -808,6 +886,57 @@
         upsertProductionModel(modelName);
       }
 
+      // max_tokens (num_predict) options start at 2048 = half of the default num_ctx (4096),
+      // so a freshly deployed model reserves output room that fits inside the default window.
+      const MAX_TOKEN_OPTIONS = ["2048", "4096", "8192", "16384", "32768", "65536", "131072", "262440"];
+      const DEFAULT_MAX_TOKENS = "2048";
+
+      function normalizeMaxTokenValue(value) {
+        const text = (value == null ? "" : String(value)).trim();
+        return text || DEFAULT_MAX_TOKENS;
+      }
+
+      // The per-row max_tokens cell is an editable <select> so the value can be
+      // changed per model after deployment; it is the persisted source of truth
+      // (the max_tokens field at the top of the page is only a default for the
+      // next deploy). This ensures such a select exists in the cell and selects
+      // the given value, adding a bespoke option if the value is not a preset.
+      function ensureMaxTokenSelect(cell, value) {
+        if (!cell) return;
+        const normalized = normalizeMaxTokenValue(value);
+        let select = cell.querySelector('select[data-role="max-tokens"]');
+        if (!select) {
+          select = document.createElement("select");
+          select.className = "form-control";
+          select.dataset.role = "max-tokens";
+          const optionValues = MAX_TOKEN_OPTIONS.includes(normalized)
+            ? MAX_TOKEN_OPTIONS
+            : [normalized, ...MAX_TOKEN_OPTIONS];
+          optionValues.forEach(v => {
+            const option = document.createElement("option");
+            option.value = v;
+            option.textContent = v;
+            select.appendChild(option);
+          });
+          cell.textContent = "";
+          cell.appendChild(select);
+          select.addEventListener("change", () => persistProductionModels());
+        } else if (!Array.from(select.options).some(o => o.value === normalized)) {
+          const option = document.createElement("option");
+          option.value = normalized;
+          option.textContent = normalized;
+          select.appendChild(option);
+        }
+        select.value = normalized;
+      }
+
+      function readMaxTokenValue(cell) {
+        if (!cell) return DEFAULT_MAX_TOKENS;
+        const select = cell.querySelector('select[data-role="max-tokens"]');
+        if (select) return normalizeMaxTokenValue(select.value);
+        return normalizeMaxTokenValue(cell.textContent);
+      }
+
       function upsertProductionModel(modelName) {
         const tbody = getProductionTableBody();
         if (!tbody) return;
@@ -816,13 +945,13 @@
         const serviceField = document.getElementById("service");
         const hoststubField = document.getElementById("hoststub");
         const apikeyField = document.getElementById("apikey");
-        const maxTokenField = document.getElementById("maxtoken");
 
         const service = serviceField ? serviceField.value : "";
         const hoststub = hoststubField ? hoststubField.value.trim() : "";
         const apikey = apikeyField ? apikeyField.value.trim() : "";
-        const maxToken = maxTokenField ? maxTokenField.value : "";
         const persistedCaps = getPersistedCapabilitiesForModel(service, hoststub, modelName);
+        // a newly deployed endpoint should also show up in the Services table
+        ensureServiceRow(service, hoststub);
 
         let targetRow = Array.from(tbody.querySelectorAll("tr")).find(row => {
           const modelCell = row.cells && row.cells[PRODUCTION_MODEL_MODEL_COLUMN_INDEX];
@@ -845,9 +974,17 @@
         }
 
         const cells = targetRow.cells;
-        const values = [service, modelName, hoststub, apikey, maxToken];
+        // a new row starts at the default max_tokens; an existing row keeps the
+        // per-row value the user may have edited in the Production Models Matrix
+        const effectiveMaxToken = isNewRow
+          ? DEFAULT_MAX_TOKENS
+          : readMaxTokenValue(cells[PRODUCTION_MODEL_MAX_TOKENS_COLUMN_INDEX]);
+        const values = [service, modelName, hoststub, apikey, effectiveMaxToken];
         values.forEach((value, index) => {
-          if (cells[index]) {
+          if (!cells[index]) return;
+          if (index === PRODUCTION_MODEL_MAX_TOKENS_COLUMN_INDEX) {
+            ensureMaxTokenSelect(cells[index], value);
+          } else {
             cells[index].textContent = value || "";
           }
         });
@@ -875,6 +1012,8 @@
           for (let i = 0; i < missingCells; i += 1) {
             row.appendChild(document.createElement("td"));
           }
+          const maxTokenCell = row.cells[PRODUCTION_MODEL_MAX_TOKENS_COLUMN_INDEX];
+          ensureMaxTokenSelect(maxTokenCell, readMaxTokenValue(maxTokenCell));
           ensureProductionRowUsageCells(row, false);
           ensureProductionRowActionButton(row);
           scheduleCapabilityVerificationForRow(row);
@@ -921,6 +1060,94 @@
           body: JSON.stringify({ inference_system })
         }).catch(err => {
           console.error("Failed to persist inference system", err);
+        });
+      }
+
+      const SERVICE_DEFAULT_NUM_CTX = 4096;
+      // fixed num_ctx choices (4k..256k); max_tokens additionally offers 2048 below this range
+      const NUM_CTX_OPTIONS = ["4096", "8192", "16384", "32768", "65536", "131072", "262440"];
+      let storedServiceNumCtx = {};
+
+      function normalizeHoststubJs(hoststub) {
+        return (hoststub == null ? "" : String(hoststub)).trim().replace(/\/+$/, "");
+      }
+
+      // Build the fixed-option num_ctx <select> for a Services-table cell. Auto-saves on
+      // change, like the other inputs on this page.
+      function createNumCtxSelect(hoststub, value) {
+        const normalized = String(value || SERVICE_DEFAULT_NUM_CTX);
+        const select = document.createElement("select");
+        select.className = "form-control service-num-ctx";
+        select.dataset.hoststub = hoststub;
+        select.style.width = "140px";
+        const optionValues = NUM_CTX_OPTIONS.includes(normalized) ? NUM_CTX_OPTIONS : [normalized, ...NUM_CTX_OPTIONS];
+        optionValues.forEach(v => {
+          const option = document.createElement("option");
+          option.value = v;
+          option.textContent = v;
+          select.appendChild(option);
+        });
+        select.value = normalized;
+        select.addEventListener("change", () => saveServiceNumCtx());
+        return select;
+      }
+
+      // Populate the server-rendered num_ctx cells (.num-ctx-cell) with their selects.
+      function initServiceRows() {
+        document.querySelectorAll("#servicesTable tbody .num-ctx-cell").forEach(cell => {
+          if (cell.querySelector("select")) return;
+          cell.appendChild(createNumCtxSelect(cell.dataset.hoststub || "", cell.dataset.numCtx));
+        });
+      }
+
+      // Ensure the Services table has a row for the given endpoint. Server-rendered rows
+      // exist for deployed endpoints; this adds a row for a service that is selected in
+      // the Service Selection box but not yet deployed, prefilled with its stored window
+      // or the default. Existing rows (and any edits) are left untouched.
+      function ensureServiceRow(service, hoststub) {
+        const tbody = document.querySelector("#servicesTable tbody");
+        const key = normalizeHoststubJs(hoststub);
+        if (!tbody || !key) return;
+        const present = Array.from(tbody.querySelectorAll(".service-num-ctx"))
+          .some(sel => normalizeHoststubJs(sel.dataset.hoststub) === key);
+        if (present) return;
+        const value = storedServiceNumCtx[key] || SERVICE_DEFAULT_NUM_CTX;
+        const tr = document.createElement("tr");
+        const tdService = document.createElement("td");
+        tdService.textContent = service || "";
+        const tdHost = document.createElement("td");
+        tdHost.textContent = key;
+        const tdCtx = document.createElement("td");
+        tdCtx.className = "num-ctx-cell";
+        tdCtx.dataset.hoststub = key;
+        tdCtx.dataset.numCtx = value;
+        tdCtx.appendChild(createNumCtxSelect(key, value));
+        tr.appendChild(tdService);
+        tr.appendChild(tdHost);
+        tr.appendChild(tdCtx);
+        tbody.appendChild(tr);
+      }
+
+      // Reflect the currently selected Service Selection endpoint in the Services table.
+      function syncSelectedServiceRow() {
+        const serviceSelect = document.getElementById("service");
+        const hoststubInput = document.getElementById("hoststub");
+        if (!serviceSelect || !hoststubInput) return;
+        ensureServiceRow(serviceSelect.value, hoststubInput.value);
+      }
+
+      function saveServiceNumCtx() {
+        const service_num_ctx = {};
+        document.querySelectorAll("#servicesTable .service-num-ctx").forEach(sel => {
+          const hoststub = (sel.dataset.hoststub || "").trim();
+          const value = parseInt(sel.value, 10);
+          if (hoststub && Number.isFinite(value) && value > 0) service_num_ctx[hoststub] = value;
+        });
+        fetch(PRODUCTION_MODEL_SUBMIT_URL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ service_num_ctx })
+        }).catch(err => {
+          console.error("Failed to persist service context windows", err);
         });
       }
 
@@ -1082,6 +1309,8 @@
             } else if (index >= PRODUCTION_MODEL_USAGE_COLUMN_START && index <= PRODUCTION_MODEL_USAGE_COLUMN_END) {
               const checkbox = row.cells[index] ? row.cells[index].querySelector('input[type="checkbox"]') : null;
               rowData[columnName] = checkbox && isSelectableUsageColumn(index) ? checkbox.checked : false;
+            } else if (index === PRODUCTION_MODEL_MAX_TOKENS_COLUMN_INDEX) {
+              rowData[columnName] = readMaxTokenValue(row.cells[index]);
             } else {
               rowData[columnName] = row.cells[index] ? row.cells[index].textContent.trim() : "";
             }
@@ -1198,7 +1427,7 @@
         if (!endpointBase) {
           return false;
         }
-        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const targetUrl = proxyUrl(endpointBase, TEST_STRINGS.toolingEndpointPath);
         const headers = { "Content-Type": "application/json" };
         if (apikey) {
           headers.Authorization = `Bearer ${apikey}`;
@@ -1294,7 +1523,7 @@
         if (!endpointBase) {
           return false;
         }
-        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const targetUrl = proxyUrl(endpointBase, TEST_STRINGS.toolingEndpointPath);
         const headers = { "Content-Type": "application/json" };
         if (apikey) {
           headers.Authorization = `Bearer ${apikey}`;
@@ -1427,7 +1656,7 @@
         if (!endpointBase) {
           return false;
         }
-        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const targetUrl = proxyUrl(endpointBase, TEST_STRINGS.toolingEndpointPath);
         const headers = { "Content-Type": "application/json" };
         if (apikey) {
           headers.Authorization = `Bearer ${apikey}`;
@@ -1616,7 +1845,7 @@
       }
 
       async function runSingleFormatCapabilityTest(service, endpointBase, modelName, apikey, inputText) {
-        const targetUrl = `${endpointBase}${TEST_STRINGS.toolingEndpointPath}`;
+        const targetUrl = proxyUrl(endpointBase, TEST_STRINGS.toolingEndpointPath);
         const headers = { "Content-Type": "application/json" };
         if (apikey) {
           headers.Authorization = `Bearer ${apikey}`;
@@ -1725,45 +1954,124 @@
         });
       }
 
+      /*** pending pulls are remembered in localStorage so that a reloaded page
+       *** can re-attach to downloads which are still running on the ollama server
+       *** (a second /api/pull for the same model joins the running download) ***/
+
+      const PENDING_PULLS_STORAGE_KEY = "yacy.llm.pendingPulls";
+      const PENDING_PULL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+      function readPendingPulls() {
+        try {
+          const parsed = JSON.parse(window.localStorage.getItem(PENDING_PULLS_STORAGE_KEY) || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (storageError) {
+          return [];
+        }
+      }
+
+      function writePendingPulls(entries) {
+        try {
+          if (entries.length === 0) {
+            window.localStorage.removeItem(PENDING_PULLS_STORAGE_KEY);
+          } else {
+            window.localStorage.setItem(PENDING_PULLS_STORAGE_KEY, JSON.stringify(entries));
+          }
+        } catch (storageError) {
+          // storage unavailable: downloads still work, they just cannot be re-attached
+        }
+      }
+
+      function addPendingPull(hoststub, modelName) {
+        const entries = readPendingPulls().filter(e => !(e.hoststub === hoststub && e.model === modelName));
+        entries.push({ hoststub, model: modelName, startedAt: Date.now() });
+        writePendingPulls(entries);
+      }
+
+      function removePendingPull(hoststub, modelName) {
+        writePendingPulls(readPendingPulls().filter(e => !(e.hoststub === hoststub && e.model === modelName)));
+      }
+
+      async function performModelDownload(hoststub, modelName, downloadBtn) {
+        const activityId = addDownloadActivity(modelName);
+        if (downloadBtn) downloadBtn.disabled = true;
+        addPendingPull(hoststub, modelName);
+        let downloadError = null;
+        try {
+          await downloadOllamaModel(hoststub, modelName, (payload) => {
+            if (activityId) updateDownloadActivity(activityId, payload);
+          });
+          console.log(`Model ${modelName} is now available on server ${hoststub}.`);
+        } catch (err) {
+          downloadError = err;
+          console.error("Error during model pull request:", err);
+        } finally {
+          if (downloadBtn) downloadBtn.disabled = false;
+          if (activityId) {
+            removeDownloadActivity(activityId);
+          }
+          try {
+            await loadModelList();
+          } catch (refreshError) {
+            console.error("Failed to refresh models after download:", refreshError);
+          }
+          // a dropped connection is not necessarily a failed pull: ollama keeps
+          // pulling server-side, so only report an error if the model is still missing
+          const stillMissing = downloadError && !availableModels.includes(modelName);
+          const connectionLost = stillMissing && !downloadError.payload
+              && !(typeof downloadError.status === "number" && downloadError.status !== 200);
+          if (connectionLost) {
+            // keep the pending entry: a page reload will re-attach to the running pull
+            alert(`Connection lost while pulling model ${modelName} from server ${hoststub}. The download continues on the server; reload this page to re-attach to its progress.`);
+          } else {
+            removePendingPull(hoststub, modelName);
+            if (stillMissing) {
+              const status = typeof downloadError.status === "number" ? downloadError.status : null;
+              const message = downloadError.payload
+                ? `Failed to download model ${modelName}: ${downloadError.message}`
+                : `Failed to download model ${modelName}. HTTP status: ${status}`;
+              alert(message);
+            }
+          }
+        }
+      }
+
+      function resumePendingPulls() {
+        const now = Date.now();
+        const entries = readPendingPulls().filter(e => e && e.hoststub && e.model
+            && (typeof e.startedAt !== "number" || now - e.startedAt < PENDING_PULL_MAX_AGE_MS));
+        writePendingPulls(entries);
+        entries.forEach(entry => {
+          // re-issuing the pull joins the running download and streams its progress;
+          // if the pull already finished it returns success almost immediately
+          performModelDownload(entry.hoststub, entry.model, null)
+            .catch(resumeError => console.error("Failed to resume model download:", resumeError));
+        });
+      }
+
       function createDownloadButton(hoststub, modelName) {
         const downloadBtn = document.createElement("button");
         downloadBtn.type = "button";
         downloadBtn.className = "btn btn-primary btn-sm";
         downloadBtn.textContent = "Download";
         styleActionButton(downloadBtn);
-        downloadBtn.addEventListener("click", async () => {
-          const activityId = addDownloadActivity(modelName);
-          downloadBtn.disabled = true;
-          try {
-            await downloadOllamaModel(hoststub, modelName);
-            console.log(`Model ${modelName} is now available on server ${hoststub}.`);
-          } catch (err) {
-            const status = err && typeof err.status === "number" ? err.status : null;
-            const message = status
-              ? `Failed to download model ${modelName}. HTTP status: ${status}`
-              : `Error pulling model ${modelName} from server ${hoststub}. Check the console for details.`;
-            alert(message);
-            console.error("Error during model pull request:", err);
-          } finally {
-            downloadBtn.disabled = false;
-            if (activityId) {
-              removeDownloadActivity(activityId);
-            }
-            try {
-              await loadModelList();
-            } catch (refreshError) {
-              console.error("Failed to refresh models after download:", refreshError);
-            }
-          }
-        });
+        downloadBtn.addEventListener("click", () => performModelDownload(hoststub, modelName, downloadBtn));
         return downloadBtn;
       }
 
       document.addEventListener("DOMContentLoaded", () => {
         try {
+          try {
+            storedServiceNumCtx = JSON.parse(document.body.dataset.serviceNumCtx || "{}") || {};
+          } catch (e) {
+            storedServiceNumCtx = {};
+          }
           persistedModelCapabilities = readPersistedModelCapabilities();
           normalizeProductionModelRows();
+          initServiceRows();
           applyPresetInference();
+          syncSelectedServiceRow();
+          resumePendingPulls();
           // auto-show available models if a preset inference exists
           const body = document.body;
           const presetService = (body.getAttribute("data-llm-service") || "").trim();
@@ -1796,7 +2104,7 @@
     <h2>LLM Selection</h2>
 
     <p>
-        Here you can pick models from a LLM model service to select them as production model.
+        Here you can pick models from an LLM model service to select them as production model.
         In the "Production Models Matrix" you can then assign each selected model a function inside YaCy
     </p>
     <p>
@@ -1807,7 +2115,7 @@
       <dl>
         <dt class="TableCellDark">service</dt>
         <dd>
-            <select name="service" id="service" class="form-control" onchange="setHoststub()">
+            <select name="service" id="service" class="form-control" onchange="serviceChanged()">
             <option value="OLLAMA" selected="selected">Ollama</option>
             <option value="LMSTUDIO">LMStudio</option>
             <option value="OPENAI">OpenAI</option>
@@ -1816,24 +2124,17 @@
         </dd>
 
         <dt class="TableCellDark">hoststub</dt>
-        <dd><input type="text" name="hoststub" id="hoststub" value="http://localhost:11434" size="30" maxlength="60" class="form-control"/>&nbsp; you can probably leave this to the default value
+        <dd><input type="text" name="hoststub" id="hoststub" value="http://localhost:11434" size="30" maxlength="60" class="form-control" onchange="syncSelectedServiceRow()"/>&nbsp; you can probably leave this to the default value
         </dd>
 
         <dt class="TableCellDark">api_key</dt>
         <dd><input type="text" name="apikey" id="apikey" value="" disabled=true size="30" maxlength="120" class="form-control"/>&nbsp; (not required for Ollama or LMStudio)
-        </dd>
-        
-        <dt class="TableCellDark">max_tokens</dt>
-        <dd>
-            <select id="maxtoken" name="maxtoken" class="form-control">
-                <option>4096</option>
-                <option>8192</option>
-                <option selected="selected">16384</option>
-                <option>32768</option>
-                <option>65536</option>
-                <option>131072</option>
-                <option>262440</option>
-            </select>&nbsp; You must set the Context Length in the LLM service to fit to your selected max_tokens; in Ollama you find a Context Length slider in the settings
+            <br/>
+            <small>
+                The selected service's context window (<code>num_ctx</code>) is shown and editable in the
+                <a href="#services">Services</a> table below. A model's generated-token cap (<code>max_tokens</code> =
+                Ollama <code>num_predict</code>) is set per model in the Production Models Matrix.
+            </small>
         </dd>
 
         <dt>&nbsp;</dt>
@@ -1842,6 +2143,36 @@
       </dl>
     </fieldset>
     </form>
+
+    <fieldset id="servicesContainer" style="display: block;"><a name="services"></a><legend>Services</legend>
+        <p>
+            <b>num_ctx</b> is the context window (in tokens) of the inference service &mdash; a per-service
+            value, shared by all models on that endpoint. It is the total budget for prompt <i>plus</i>
+            generated output; YaCy uses it to size prompts so they leave room to generate. The row for the
+            service selected above appears here automatically with its stored (or default) window.
+            This value is <b>advisory</b>: set it to match the window your backend actually serves
+            (Ollama: <code>OLLAMA_CONTEXT_LENGTH</code>, a Modelfile <code>PARAMETER num_ctx</code>, or the
+            Context Length setting). YaCy does not enforce it on the backend.
+        </p>
+        <table class="table table-striped" id="servicesTable">
+            <thead class="thead-dark">
+                <tr>
+                    <td>service</td>
+                    <td>hoststub</td>
+                    <td>num_ctx</td>
+                </tr>
+            </thead>
+            <tbody>
+        #{services}#
+            <tr>
+                <td>#[service]#</td>
+                <td>#[hoststub]#</td>
+                <td class="num-ctx-cell" data-hoststub="#[hoststub]#" data-num-ctx="#[num_ctx]#"></td>
+            </tr>
+        #{/services}#
+            </tbody>
+        </table>
+    </fieldset>
 
     <fieldset id="loadModelContainer" style="display:none"></fieldset>
     <fieldset id="downloadActivityContainer" style="display:none">
@@ -1871,6 +2202,7 @@
                     <td class="narrow">search-query<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model produces search queries to YaCy search from prompts in RAG or chat</span></span></td>
                     <td class="narrow">qa-pairs<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model can be used to produce query-answer pairs which enhance search from chat prompts</span></span></td>
                     <td class="narrow">tldr-shortener<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model is used to make summaries from web content</span></span></td>
+                    <td class="narrow">log-report<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>This model evaluates YaCy runtime logs and creates self-enhancement reports</span></span></td>
                     
                     <td class="narrow">thinking<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>we detect thinking only to be able to suppress thinking. thinking is not used in YaCy</span></span></td>
                     <td class="narrow">tooling<br/><span class="info"><img src="env/grafics/i16.gif" width="16" height="16" alt="info"/><span>tooling is required for agentic abilities.</span></span></td>
@@ -1895,6 +2227,7 @@
                 <td><input type="checkbox" #(query)#::checked=true#(/query)# disabled="disabled"></td>
                 <td><input type="checkbox" #(qapairs)#::checked=true#(/qapairs)# disabled="disabled"></td>
                 <td><input type="checkbox" #(tldr)#::checked=true#(/tldr)#></td>
+                <td><input type="checkbox" #(logreport)#::checked=true#(/logreport)#></td>
                 
                 <td>#[thinking]#</td>
                 <td>#[tooling]#</td>

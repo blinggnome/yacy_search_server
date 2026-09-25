@@ -56,6 +56,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.GZIPInputStream;
 
@@ -538,6 +539,8 @@ public final class FileUtils {
         final String lockKey = file.getAbsolutePath();
         final Object lock = SAVE_MAP_LOCKS.computeIfAbsent(lockKey, k -> new Object());
         synchronized (lock) {
+            /* Take the snapshot in write order so delayed callers cannot persist stale state. */
+            final Map<String, String> propsCopy = new TreeMap<>(props);
             File tf = null;
             PrintWriter pw = null;
             try {
@@ -553,7 +556,7 @@ public final class FileUtils {
                 pw = new PrintWriter(tf, StandardCharsets.UTF_8.name());
                 pw.println("# " + comment);
                 String key, value;
-                for ( final Map.Entry<String, String> entry : props.entrySet() ) {
+                for ( final Map.Entry<String, String> entry : propsCopy.entrySet() ) {
                     key = entry.getKey();
                     if ( key != null ) {
                         key = StringUtils.replaceEach(key, unescaped_strings_in, escaped_strings_out);

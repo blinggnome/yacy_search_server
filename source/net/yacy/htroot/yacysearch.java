@@ -33,6 +33,7 @@ import static net.yacy.repository.BlacklistHelper.addBlacklistEntry;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import javax.servlet.http.Cookie;
 import java.net.IDN;
 import java.net.MalformedURLException;
 import java.net.URLEncoder;
@@ -69,7 +70,6 @@ import net.yacy.cora.protocol.ResponseHeader;
 import net.yacy.cora.util.ConcurrentLog;
 import net.yacy.data.BookmarksDB.Bookmark;
 import net.yacy.data.DidYouMean;
-import net.yacy.data.UserDB;
 import net.yacy.document.LibraryProvider;
 import net.yacy.document.Tokenizer;
 import net.yacy.http.servlets.TemplateProcessingException;
@@ -111,22 +111,11 @@ public class yacysearch {
         final Switchboard sb = (Switchboard) env;
         sb.localSearchLastAccess = System.currentTimeMillis();
 
-        String authenticatedUserName = null;
         final boolean adminAuthenticated = sb.verifyAuthentication(header);
         final boolean searchAllowed = sb.getConfigBool(SwitchboardConstants.PUBLIC_SEARCHPAGE, true) || adminAuthenticated;
-
-        boolean extendedSearchRights = adminAuthenticated;
-        boolean bookmarkRights = false;
-        if (adminAuthenticated) {
-            authenticatedUserName = sb.getConfig(SwitchboardConstants.ADMIN_ACCOUNT_USER_NAME, "admin");
-        } else {
-            final UserDB.Entry user = sb.userDB != null ? sb.userDB.getUser(header) : null;
-            if (user != null) {
-                extendedSearchRights = user.hasRight(UserDB.AccessRight.EXTENDED_SEARCH_RIGHT);
-                authenticatedUserName = user.getUserName();
-                bookmarkRights = user.hasRight(UserDB.AccessRight.BOOKMARK_RIGHT);
-            }
-        }
+        final boolean extendedSearchRights = adminAuthenticated;
+        final String authenticatedUserName = adminAuthenticated
+                ? sb.getConfig(SwitchboardConstants.ADMIN_ACCOUNT_USER_NAME, "admin") : null;
 
         final boolean localhostAccess = header.accessFromLocalhost();
         final String promoteSearchPageGreeting =
@@ -179,6 +168,22 @@ public class yacysearch {
         boolean global = post == null || (!post.get("resource-switch", post.get("resource", "global")).equals("local") && p2pmode);
         final boolean stealthmode = p2pmode && !global;
 
+        // Read persisted language preference from cookie so it is available in both the
+        // empty-search (early return) and full-search paths below.
+        String cookieLanguage = null;
+        final Cookie[] requestCookies = header.getCookies();
+        if (requestCookies != null) {
+            for (final Cookie c : requestCookies) {
+                if ("yacy-language".equals(c.getName())) {
+                    final String v = c.getValue();
+                    if (v != null && v.startsWith("lang_") && ISO639.exists(v.substring(5))) {
+                        cookieLanguage = v.substring(5);
+                    }
+                    break;
+                }
+            }
+        }
+
         if ( post == null || indexSegment == null || env == null || !searchAllowed ) {
             if (indexSegment == null) ConcurrentLog.info("yacysearch", "indexSegment == null");
             // we create empty entries for template strings
@@ -217,6 +222,7 @@ public class yacysearch {
             prop.put("rss_queryenc", "");
             prop.put("meanCount", 5);
             prop.put("eventID",""); // mandatory parameter for yacysearchtrailer/yacysearchitem includes
+            prop.put("languageSel", cookieLanguage != null ? "lang_" + cookieLanguage : "");
             return prop;
         }
 
@@ -628,23 +634,48 @@ public class yacysearch {
 
             if (urlmask == null || urlmask.isEmpty()) urlmask = ".*"; //if no urlmask was given
 
-            // read the language from the language-restrict option 'lr'
-            // if no one is given, use the user agent or the system language as default
-            String language = (post == null) ? null : post.get("lr");
-            if (language != null && language.startsWith("lang_") ) {
-                language = language.substring(5);
+            // read the language from the language-restrict option 'lr',
+            // then from a persisted cookie preference, then from Accept-Language header
+            final boolean languageFromParam = post.containsKey("lr"); // lr was explicitly submitted in this request
+            final String lrParam = languageFromParam ? post.get("lr") : null;
+            String language;
+            if (lrParam != null && lrParam.startsWith("lang_") && ISO639.exists(lrParam.substring(5))) {
+                language = lrParam.substring(5);
                 if (modifier.language == null) modifier.language = language;
-            }
-            if (language == null || !ISO639.exists(language) ) {
-                // find out language of the user by reading of the user-agent string
+            } else if (!languageFromParam && cookieLanguage != null) {
+                // no lr param submitted this request — use saved cookie preference
+                language = cookieLanguage;
+                if (modifier.language == null) modifier.language = language;
+            } else {
+                // lr was submitted as empty/invalid (clear preference) or no cookie exists
                 String agent = header.get(HeaderFramework.ACCEPT_LANGUAGE);
-                if ( agent == null ) {
+                if (agent == null) {
                     agent = System.getProperty("user.language");
                 }
                 language = (agent == null) ? "en" : ISO639.userAgentLanguageDetection(agent);
-                if ( language == null ) {
+                if (language == null) {
                     language = "en";
                 }
+            }
+
+            // persist language preference when user explicitly submits a change via the lr param
+            prop.put("languageSel", modifier.language != null ? "lang_" + modifier.language : "");
+            if (languageFromParam) {
+                final ResponseHeader outgoingHeader = prop.getOutgoingHeader();
+                if (modifier.language != null) {
+                    outgoingHeader.add(
+                        HeaderFramework.SET_COOKIE,
+                        "yacy-language=lang_" + modifier.language +
+                        "; Max-Age=" + (365 * 24 * 60 * 60) +
+                        "; Path=/"
+                    );
+                } else {
+                    outgoingHeader.add(
+                        HeaderFramework.SET_COOKIE,
+                        "yacy-language=; Max-Age=0; Path=/"
+                    );
+                }
+                prop.setOutgoingHeader(outgoingHeader);
             }
 
             // the query
@@ -712,14 +743,14 @@ public class yacysearch {
 
           // if a bookmarks-button was hit, create new bookmark entry
             if (post != null && post.containsKey("bookmarkref")) {
-                if (!sb.verifyAuthentication(header) && !bookmarkRights) {
+                if (!adminAuthenticated) {
                     prop.authenticationRequired();
                     return prop;
                 }
                 //final String bookmarkHash = post.get("bookmarkref", ""); // urlhash
                 final String urlstr = crypt.simpleDecode(post.get("bookmarkurl"));
                 if (urlstr != null) {
-                    final Bookmark bmk = sb.bookmarksDB.createorgetBookmark(urlstr, "admin");
+                    final Bookmark bmk = sb.bookmarksDB.createorgetBookmark(urlstr, authenticatedUserName);
                     if (bmk != null) {
                         bmk.setProperty(Bookmark.BOOKMARK_QUERY, querystring);
                         bmk.addTag("/search"); // add to bookmark folder

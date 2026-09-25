@@ -1,8 +1,11 @@
+.classpath
+.project
 *.class
 *.*~
 lib/yacycore.jar
 libbuild/svnRevNr.jar
 libbuild/GitRevTask.jar
+org.eclipse.*
 gen/**
 /DATA
 classes/
@@ -35,3 +38,10 @@ yacy.log
 backups/
 vagrant_yacy/.vagrant/
 .gradle
+grafic_examples
+/ir/mediawiki/_dumps/
+/ir/mediawiki/__pycache__/
+/ir/mediawiki/test_*.py
+/ir/mediawiki/.venv/
+/ir/mediawiki/_markdown/
+/ir/mediawiki/_statistics/

@@ -59,6 +59,7 @@ import net.yacy.kelondro.util.FileUtils;
 import net.yacy.kelondro.util.kelondroException;
 import net.yacy.search.Switchboard;
 import net.yacy.search.SwitchboardConstants;
+import net.yacy.server.serverSwitch;
 
 public final class CrawlSwitchboard {
 
@@ -119,12 +120,18 @@ public final class CrawlSwitchboard {
     private final Map<String, CrawlProfile> defaultPushProfiles; // for each collection one profile
     private final File queuesRoot;
     private final Switchboard switchboard;
+    private final serverSwitch config;
 
     public CrawlSwitchboard(Switchboard switchboard) {
+        this(switchboard, switchboard.queuesRoot, switchboard);
+    }
 
+    /** Initialize profile storage independently of the server's background services. */
+    CrawlSwitchboard(final Switchboard switchboard, final File queuesRoot, final serverSwitch config) {
         this.switchboard = switchboard;
-        this.log = this.switchboard.log;
-        this.queuesRoot = this.switchboard.queuesRoot;
+        this.config = config;
+        this.log = config.log;
+        this.queuesRoot = queuesRoot;
         this.defaultPushProfiles = new ConcurrentHashMap<>();
         this.profilesActiveCrawlsCache = Collections.synchronizedMap(new TreeMap<byte[], CrawlProfile>(Base64Order.enhancedCoder));
         this.profilesActiveCrawlsCounter = new ConcurrentHashMap<>();
@@ -247,7 +254,7 @@ public final class CrawlSwitchboard {
         return this.profilesPassiveCrawls.keySet();
     }
 
-    public void removeActive(final byte[] profileKey) {
+    public synchronized void removeActive(final byte[] profileKey) {
         if ( profileKey == null ) {
             return;
         }
@@ -268,6 +275,17 @@ public final class CrawlSwitchboard {
         this.removePassive(profileKey);
     }
 
+    /** Persist streamed sitemap/file roots without reviving a profile stopped by the user. */
+    public void recordStartURL(final CrawlProfile profile, final Request entry) {
+        if (entry.depth() != 0 || DEFAULT_PROFILES.contains(profile.name())) return;
+        synchronized (this) {
+            final byte[] handle = UTF8.getBytes(profile.handle());
+            if (getActive(handle) == profile && profile.recordStartURL(entry.url(), entry.depth())) {
+                this.profilesActiveCrawls.put(handle, profile);
+            }
+        }
+    }
+
     public void putPassive(final byte[] profileKey, final CrawlProfile profile) {
         this.profilesPassiveCrawls.put(profileKey, profile);
         this.removeActive(profileKey);
@@ -278,7 +296,7 @@ public final class CrawlSwitchboard {
     }
 
     private void initActiveCrawlProfiles() {
-        final Switchboard sb = Switchboard.getSwitchboard();
+        final serverSwitch sb = this.config;
 
         // generate new default entry for deep auto crawl
         this.defaultAutocrawlDeepProfile =
@@ -304,8 +322,6 @@ public final class CrawlSwitchboard {
                 sb.getConfigBool(SwitchboardConstants.AUTOCRAWL_INDEX_MEDIA, true),
                 false,
                 false,
-                -1,
-                false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.NOCACHE,
                 "robot_" + CRAWL_PROFILE_AUTOCRAWL_DEEP,
                 ClientIdentification.yacyInternetCrawlerAgentName,
@@ -339,8 +355,6 @@ public final class CrawlSwitchboard {
                 sb.getConfigBool(SwitchboardConstants.AUTOCRAWL_INDEX_MEDIA, true),
                 false,
                 false,
-                -1,
-                false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.NOCACHE,
                 "robot_" + CRAWL_PROFILE_AUTOCRAWL_SHALLOW,
                 ClientIdentification.yacyInternetCrawlerAgentName,
@@ -374,7 +388,6 @@ public final class CrawlSwitchboard {
                 sb.getConfigBool(SwitchboardConstants.PROXY_INDEXING_LOCAL_MEDIA, true),
                 true,
                 sb.getConfigBool(SwitchboardConstants.PROXY_INDEXING_REMOTE, false),
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFFRESH,
                 "robot_" + CRAWL_PROFILE_PROXY,
                 ClientIdentification.yacyProxyAgentName,
@@ -408,7 +421,6 @@ public final class CrawlSwitchboard {
                 true,
                 false,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFFRESH,
                 "robot_" + CRAWL_PROFILE_REMOTE,
                 ClientIdentification.yacyInternetCrawlerAgentName,
@@ -442,7 +454,6 @@ public final class CrawlSwitchboard {
                 false,
                 true,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFEXIST,
                 "robot_" + CRAWL_PROFILE_SNIPPET_LOCAL_TEXT,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -476,7 +487,6 @@ public final class CrawlSwitchboard {
                 true,
                 true,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFEXIST,
                 "robot_" + CRAWL_PROFILE_SNIPPET_GLOBAL_TEXT,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -518,7 +528,6 @@ public final class CrawlSwitchboard {
                 false,
                 true,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFEXIST,
                 "robot_" + CRAWL_PROFILE_GREEDY_LEARNING_TEXT,
                 ClientIdentification.browserAgentName,
@@ -552,7 +561,6 @@ public final class CrawlSwitchboard {
                 false, // indexMedia
                 true,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFEXIST,
                 "robot_" + CRAWL_PROFILE_SNIPPET_LOCAL_MEDIA,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -586,7 +594,6 @@ public final class CrawlSwitchboard {
                 true,
                 true,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.IFEXIST,
                 "robot_" + CRAWL_PROFILE_SNIPPET_GLOBAL_MEDIA,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -620,7 +627,6 @@ public final class CrawlSwitchboard {
                 false,
                 false,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.NOCACHE,
                 "robot_" + CRAWL_PROFILE_PACKS,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -657,7 +663,6 @@ public final class CrawlSwitchboard {
                 true,
                 false,
                 false,
-                -1, false, true, CrawlProfile.MATCH_NEVER_STRING,
                 CacheStrategy.NOCACHE,
                 collection,
                 ClientIdentification.yacyIntranetCrawlerAgentName,
@@ -716,6 +721,18 @@ public final class CrawlSwitchboard {
             hasDoneSomething = true;
         }
         return hasDoneSomething;
+    }
+
+    /** Start hosts whose surrounding web graph should survive pruning. */
+    public Set<String> getActiveStartHosts() {
+        final Set<String> hosts = new HashSet<>();
+        for (final byte[] handle : getActive()) {
+            final CrawlProfile profile = getActive(handle);
+            if (profile != null && !DEFAULT_PROFILES.contains(profile.name())) {
+                hosts.addAll(profile.startHosts());
+            }
+        }
+        return hosts;
     }
 
     public Set<String> getActiveProfiles() {

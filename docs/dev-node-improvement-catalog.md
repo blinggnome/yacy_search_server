@@ -15,6 +15,12 @@ fork, not that every feature is enabled on every node. Historical test results
 are identified as such; this cataloging pass did not deploy code, probe nodes,
 or rerun application tests. Upstream PR status was checked on the review date.
 
+Synchronization update, 2026-09-25: all catalogued customizations are retained
+on current upstream `b50b76bd`, with the thread-evictor fix now provided directly
+by upstream. See [integration evidence and deployment limits](upstream-sync-20260925.md).
+This is source alignment only; running nodes are unchanged. Upstream's retired
+ordinary-user authentication changes the renderer exemption to administrators.
+
 ### Reading Guide
 
 - [Contribution shortlist](#suggested-contribution-order)

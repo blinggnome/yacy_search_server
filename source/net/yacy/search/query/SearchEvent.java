@@ -706,6 +706,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
             this.remote_rwi_stored.addAndGet(fullResource);
             this.remote_rwi_peerCount.incrementAndGet();
         }
+        final String queryString = this.query.getQueryGoal().getQueryString(false);
         long timer = System.currentTimeMillis();
 
         // normalize entries
@@ -735,12 +736,20 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
             pollloop: while ( true ) {
                 remaining = timeout - System.currentTimeMillis();
                 if (remaining <= 0) {
-                    ConcurrentLog.warn("SearchEvent", "terminated 'add' loop before poll time-out = " + remaining + ", decodedEntries.size = " + decodedEntries.size());
+                    ConcurrentLog.warn("SearchEvent", "event=search.rwi.add subsystem=search result=timeout phase=before-poll local=" + local +
+                            " queryId=" + this.query.id(true) + " contentDomain=" + this.query.contentdom +
+                            " query=\"" + queryString + "\"" +
+                            " remainingMs=" + remaining + " decodedQueueSize=" + decodedEntries.size() +
+                            " fullResource=" + fullResource + " maxtimeMs=" + maxtime);
                     break;
                 }
                 iEntry = decodedEntries.poll(remaining, TimeUnit.MILLISECONDS);
                 if (iEntry == null) {
-                    ConcurrentLog.warn("SearchEvent", "terminated 'add' loop after poll time-out = " + remaining + ", decodedEntries.size = " + decodedEntries.size());
+                    ConcurrentLog.warn("SearchEvent", "event=search.rwi.add subsystem=search result=timeout phase=poll local=" + local +
+                            " queryId=" + this.query.id(true) + " contentDomain=" + this.query.contentdom +
+                            " query=\"" + queryString + "\"" +
+                            " remainingMs=" + remaining + " decodedQueueSize=" + decodedEntries.size() +
+                            " fullResource=" + fullResource + " maxtimeMs=" + maxtime);
                     break pollloop;
                 }
                 if (iEntry == WordReferenceVars.poison) {
@@ -835,9 +844,16 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
 
                 successcounter++;
             }
-            if (System.currentTimeMillis() >= timeout) ConcurrentLog.warn("SearchEvent", "rwi normalization ended with timeout = " + maxtime);
+            if (System.currentTimeMillis() >= timeout) ConcurrentLog.warn("SearchEvent", "event=search.rwi.normalization subsystem=search result=timeout local=" + local +
+                    " queryId=" + this.query.id(true) + " contentDomain=" + this.query.contentdom +
+                    " query=\"" + queryString + "\"" +
+                    " count=" + successcounter + " fullResource=" + fullResource + " maxtimeMs=" + maxtime);
 
         } catch (final InterruptedException e ) {
+            ConcurrentLog.warn("SearchEvent", "event=search.rwi.add subsystem=search result=interrupted local=" + local +
+                    " queryId=" + this.query.id(true) + " contentDomain=" + this.query.contentdom +
+                    " query=\"" + queryString + "\"" +
+                    " count=" + successcounter + " fullResource=" + fullResource + " maxtimeMs=" + maxtime);
         }
 
         //if ((query.neededResults() > 0) && (container.size() > query.neededResults())) remove(true, true);
@@ -983,6 +999,16 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
             this.remote_solr_peerCount.incrementAndGet();
         }
 
+        // Compute the max Solr score in this peer's result batch so we can normalize
+        // individual scores into [0, 1] before inserting into the shared priority queue.
+        // Without this, peers with higher absolute Solr scores always dominate peers
+        // with lower absolute scores, producing biased cross-node result ordering.
+        float maxSolrScore = 0.0f;
+        for (final URIMetadataNode node : nodeList) {
+            final Float s = (Float) node.getFieldValue("score");
+            if (s != null && s > maxSolrScore) maxSolrScore = s;
+        }
+
         long timer = System.currentTimeMillis();
 
         // normalize entries
@@ -1117,7 +1143,7 @@ public final class SearchEvent implements ScoreMapUpdatesListener {
                         // so far Solr score is used (with abitrary factor to get value similar to rwi ranking values)
                         final Float scorex = (Float) iEntry.getFieldValue("score"); // this is a special field containing the ranking score of a Solr search result
                         if (scorex != null && scorex > 0)
-                            score = (long) ((1000000.0f * scorex) - iEntry.urllength()); // we modify the score here since the solr score is equal in many cases and then the order would simply depend on the url hash which would be silly
+                            score = (long) ((1000000.0f * (maxSolrScore > 0.0f ? scorex / maxSolrScore : scorex)) - iEntry.urllength()); // normalize to [0,1] across this peer's batch so scores are comparable across peers
                         else
                             score = this.order.cardinal(iEntry);
                         this.nodeStack.put(new ReverseElement<>(iEntry, score)); // inserts the element and removes the worst (which is smallest)
