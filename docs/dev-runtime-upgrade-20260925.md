@@ -1,9 +1,11 @@
 # Dev Runtime Upgrade: 2026-09-25
 
-Status: new runtime installed and running; search validation remains unresolved.
-Do not describe this as a fully verified upgrade or fleet-ready build. See the
-[active work order](work-orders/active/20260925T175946Z-dev-runtime-upgrade.md)
-before resuming. No search-code changes or rollback have been performed.
+Status: installed and accepted for continued dev use on 2026-09-26. The user
+reports search working as before the upgrade, including slow local results on
+the large mechanical-disk index. Automated search limits are retained below;
+this is not a claim that every search check passed or that the build is fleet-ready.
+See the [completed work order](work-orders/completed/20260925T175946Z-dev-runtime-upgrade.md).
+No search-code changes or rollback were performed during deployment validation.
 
 ## Scope And Build
 
@@ -11,7 +13,7 @@ User authorized deploying the synchronized custom source to Server2 dev only,
 including necessary prerequisites. Source `27152b94a` contains merge `975a92f51`
 of upstream `b50b76bd`. Standard `/opt/yacy` and the fleet are excluded.
 
-The installed dev baseline uses Java 21.0.12.1 and Solr 9.0.0. The candidate uses
+The pre-upgrade dev baseline used Java 21.0.12.1 and Solr 9.0.0. The deployed build uses
 Solr 9.10.1/Lucene 9.12.3, the relocated private Jetty 10 client bridge, and public
 Jetty 12.0.37. Java already satisfies the minimum; no OS package upgrade needed.
 Do not mix old Solr/Jetty jars with the new package: the startup script loads
@@ -111,7 +113,7 @@ errors. Standard `yacy.service` remained inactive/disabled; OpenSearch unchanged
 - Browser homepage rendered correctly. No JavaScript errors observed in the
   sampled search page, but search-row validation failed intermittently as below.
 
-## Unresolved Search Validation
+## Search Timing And Validation Limits
 
 Synthetic local-only `yacy` searches with `maximumRecords=10&verify=false`:
 
@@ -136,13 +138,48 @@ The upstream merge changed HeapReader substantially; old/new live comparative
 testing has not established causation. JSON templates were unchanged by the
 merge, but that alone does not prove the live JSON symptom is pre-existing.
 Do not repair this by changing templates, extending timeouts or clearing data
-without a focused diagnosis. The user has been asked whether to continue
-investigation on the upgraded dev runtime or restore the coherent old backup.
+without a focused diagnosis.
 
-No overnight soak, fleet deployment or successful rollback rehearsal claimed.
-The ordinary full compileTest failures remain as documented, not a full-suite
-pass. Search validation must be resolved before declaring this assignment done.
+### September 26 Baseline Confirmation
+
+The user chose to retain the upgraded runtime and then confirmed search appears
+to work as before the update: local results take time on the mechanical drives
+and large database. This supplies the previously missing operational baseline;
+it is not proof that every possible search path is regression-free or that disk
+hardware alone explains every observed empty slot.
+
+After almost ten hours, the same dev JVM and feeder remained active with zero
+service restarts. HTTP returned 200 in 0.003 seconds; about 14 GiB RAM was
+available and disk PSI was around 3-4%, lower than immediately after startup.
+The already-running bounded checks were completed without further expansion:
+
+| Check, in execution order | Returned rows | Seconds |
+| --- | ---: | ---: |
+| Direct Solr, IDs only | 10 | 1.340 |
+| Direct Solr, full documents (about 1.4 MB) | 10 | 0.114 |
+| YaCy HTML page 1 | 4 | 12.062 |
+| YaCy HTML page 2 | 0 | 6.051 |
+| YaCy HTML page 1, repeat | 6 | 8.966 |
+| YaCy HTML page 2, repeat | 0 | 9.993 |
+| YaCy JSON, requesting two results | 1 | 7.568 |
+
+All seven requests returned HTTP 200 without ServletException. HTML counts are
+server-rendered `searchresults` elements, not a promise of later browser updates.
+The sequential Solr queries can benefit from cache warming; their speed ratio
+is not a controlled benchmark. No search patch, restart, cache clearing, index
+reset or additional deployment was made in this follow-up.
+
+Deployment closes with the user's baseline confirmation and these explicit
+coverage limits. Keep local-result latency/materialization as an optional future
+performance investigation. Separately retain the malformed-JSON case when a
+result slot is missing as a robustness follow-up; it did not recur in the final
+JSON check, and its regression status has not been established.
+
+This is one overnight service-continuity check, not an exhaustive soak. No fleet
+deployment or successful rollback rehearsal claimed. The ordinary full
+compileTest failures remain documented, not a full-suite pass.
 
 Ignored local evidence: `backups/dev-runtime-upgrade-20260925T175946Z/`.
+Follow-up timing/count evidence: `backups/search-delay-20260926T065629Z/`.
 Remote helper scripts and markers live beneath the protected upgrade directory.
 Read the work order for exact running-job identities before taking any action.

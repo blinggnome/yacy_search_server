@@ -5,6 +5,7 @@ the evidence and limitations; an archive entry alone does not imply success.
 
 | Closed (UTC) | Work order | Outcome | Result |
 | --- | --- | --- | --- |
+| 2026-09-26 | [Dev runtime upgrade](20260925T175946Z-dev-runtime-upgrade.md) | succeeded with limits | Full runtime installed after verified 546 GiB backup; admin/index/blacklist checks pass; overnight service continuity and user confirmation of prior slow-search baseline; automated row-count/JSON limits retained; no search patch or fleet rollout |
 | 2026-09-25 | [Custom fork upstream synchronization](20260925T163717Z-upstream-sync.md) | succeeded | Upstream b50b76bd merged with custom work preserved; build and 190 focused tests pass; baseline full-suite limits documented; fork push verified after workflow authorization; no deployment |
 | 2026-09-25 | [Upstream synchronization policy](20260925T155404Z-upstream-sync-policy.md) | succeeded | AGENTS backed up and expanded with automatic checkpoints, isolated validation and explicit publication/deployment gates; prior text preserved; independent review and memory read-back pass; no actual sync |
 | 2026-09-25 | [PR 834 current integration](20260925T152746Z-pr834-current-integration.md) | succeeded | Current pinned merge builds and passes 41 focused tests; pristine baseline passes 12; full compilation failures identical; sanitized evidence posted and read back on PR 834 |

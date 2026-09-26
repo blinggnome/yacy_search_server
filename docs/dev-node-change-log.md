@@ -16,7 +16,7 @@ Each entry should answer:
 - Which files or settings matter when testing or rolling back?
 - What verification or rollout note should a future agent look at first?
 
-## 2026-09-25: Deploy Synchronized Runtime To Dev; Search Gate Remains Open
+## 2026-09-25/26: Deploy Synchronized Runtime To Dev
 
 - [Deployment record](dev-runtime-upgrade-20260925.md): full custom build
   `27152b94a` installed on Server2 `/opt/yacy-dev`, including Solr9.10.1 and
@@ -28,11 +28,16 @@ Each entry should answer:
   local helper scripts preserved; dependent crawl feeder restored. Standard
   YaCy remains inactive/disabled and OpenSearch unchanged.
 - Browser local-search checks found intermittent missing rows; direct Solr is
-  fast while samples show result timeouts and disk-backed RWI waits. Regression
-  status unresolved. No search-code patch, rollback or fleet rollout performed.
-  [Work order](work-orders/active/20260925T175946Z-dev-runtime-upgrade.md) stays
-  active pending investigation/rollback choice. Do not claim complete validation.
-- Documentation checkpoint subject: `Document dev upgrade and unresolved search validation`.
+  fast while samples show result timeouts and disk-backed RWI waits. On Sept26
+  the user confirmed search behaves as before, including normal delays on this
+  large mechanical-disk index. Same JVM/feeder remained up nearly ten hours with
+  no restarts. Follow-up HTTP probes passed transport checks but not full-page
+  row-count expectations; details and JSON robustness follow-up are retained.
+- [Work order](work-orders/completed/20260925T175946Z-dev-runtime-upgrade.md)
+  closes as accepted dev deployment with validation limits, not a fleet release
+  or a claim that every search check passed. No search patch or rollback.
+- Initial documentation checkpoint `cf1d36ce6`; acceptance checkpoint subject:
+  `Record accepted dev upgrade and existing search delays`.
 
 ## 2026-09-25: Integrate Current Upstream Into The Custom Fork
 

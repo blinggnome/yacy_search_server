@@ -2,10 +2,10 @@
 
 - ID: `20260925T175946Z-dev-runtime-upgrade`
 - Created: `2026-09-25T17:59:46Z`
-- Last Updated: `2026-09-25T21:36:00Z`
+- Last Updated: `2026-09-26T07:00:17Z`
 - Owner: dev-builder lead
-- Status: active
-- Outcome: not yet determined
+- Status: closed
+- Outcome: succeeded with documented validation limits and user baseline confirmation
 
 ## Request And Definition Of Done
 
@@ -28,10 +28,18 @@ behavior. Source checkpoint is `27152b94af573c0f2dda1fd8d94b89ecd65830e1`.
 - [x] [verified] Inspect live runtime/storage and upstream migration requirements.
 - [x] [verified] Complete distribution built/uploaded; establish verified rollback.
 - [x] [verified] Stage and activate dev-only runtime with compatible data.
-- [ ] [running] Validate web/admin/search/crawl/blacklist behavior and index state.
-- [ ] [pending] Document, commit/push scoped changes and archive outcome.
+- [x] [verified] Validate web/admin/search/crawl/blacklist/index scope; user confirms
+  prior search baseline. Automated row-count limits remain explicit, not a pass.
+- [x] [verified] Document and archive outcome; publication checkpoint subject
+  `Record accepted dev upgrade and existing search delays`.
 
 ## Current State And Next Action
+
+Current outcome: upgraded dev and original feeder retained. User confirms search
+works as before, including slow local results on mechanical disks. No source
+patch or rollback made. Deployment accepted for continued dev use; no fleet
+rollout authorized. All bounded probe sessions have completed. Optional future
+performance and JSON robustness work is separate. Chronology follows:
 
 - Source synchronization is committed/published; 190 focused tests passed;
   full compileTest has documented baseline/classpath failures.
@@ -96,10 +104,19 @@ behavior. Source checkpoint is `27152b94af573c0f2dda1fd8d94b89ecd65830e1`.
 - Git freshness rechecked: HEAD/origin27152b94a equal; upstream remainsb50b76bd.
   No new source changes. Temporary Playwright browser closed; no probe sessions
   remain running. Dev and its original feeder remain active.
-- Next Action: user choice requested (continue investigation versus coherent
-  rollback); review reply, then investigate RWI/materialization or restore only
-  under that chosen scope. Do not declare full validation complete. Preserve
-  the full backup; never rerun activation or point old runtime at new data.
+- User chose to keep the upgraded dev runtime running and investigate (Sept26).
+  At06:56:31 the same dev and feeder PIDs remain active with zero restarts;
+  standard remains inactive. HTTP200 in0.003s,14GiB available RAM, substantially
+  lower disk PSI (about3-4%) than immediately after startup.
+- User subsequently confirmed search appears to work as before the update and
+  explained the known local-result delay on mechanical drives/large database.
+- Bounded follow-up session69307 completed: all7 HTTP200/no ServletException;
+  directSolr10 IDs1.34s/full docs0.114s; HTML page1 counts4then6, page2 counts0
+  both times; JSON1of2 requested, validJSON. Do not turn these partial counts
+  into a claim all search tests passed. Evidence is preserved in probe-results.json.
+- Next Action: normal dev work may resume. Optional local search latency and
+  absent-slot JSON robustness need separate scoped investigation, not an assumed
+  regression repair. Retain cold backup; no rollback or fleet rollout planned.
 - Resume: read this order; check recorded jobs and live service state before
   repeating any backup, installation or crawl. Do not repeat by assumption.
 
@@ -107,6 +124,7 @@ behavior. Source checkpoint is `27152b94af573c0f2dda1fd8d94b89ecd65830e1`.
 
 - `docs/upstream-sync-20260925.md`; `AGENTS.md` dev and deployment safeguards.
 - Ignored evidence: `backups/dev-runtime-upgrade-20260925T175946Z/`.
+- Sept26 investigation evidence: `backups/search-delay-20260926T065629Z/`.
 - Remote root-only staging/backup: `/opt/yacy-dev-upgrade-20260925T175946Z`.
   Source archive SHA256 `9a3c31321760ced21b4173b4081e28b679bfa3c4e6673f4160fcfa54d3bea485`.
   `cold-backup.sh` uses systemctl stop, full rsync backup and metadata dry-run
@@ -136,20 +154,28 @@ behavior. Source checkpoint is `27152b94af573c0f2dda1fd8d94b89ecd65830e1`.
 | 2026-09-25 21:16 | Activate full dev runtime | Jar/runtime hashes and config/rules checks passed | HTTP and behavior validation |
 | 2026-09-25 21:23 | Preserve helpers and restore dependent feeder | Original helper bytes restored, single feeder active | Finish browser search validation |
 | 2026-09-25 21:33 | Search verification discrepancy | Direct Solr fast; result timeouts and RWI waits; page2 repeat still empty | Record incomplete gate; user choice for investigation/rollback |
+| 2026-09-26 06:56 | Keep upgraded dev; bounded overnight recheck | Same services,0 restarts,lower disk pressure,HTTP200 | Finish existing probes |
+| 2026-09-26 07:00 | User confirms prior slow-search baseline | HTTP transport/fullSolr checks pass; partial YaCy rows remain documented | Accept dev deployment with limits; no speculative search patch |
 
 ## Delegation
 
-Singer reviews upstream Git/docs/build migration boundaries read-only. Live
-Solr9.0/Java21 facts shared. Lead owns remote runtime and Git writes.
+Singer reviewed upstream Git/docs/build migration boundaries read-only; lead
+owned the remote runtime. Sept26 review found upstream RWI storage changes but
+did not establish an upgrade-caused regression; `oneResult` was unchanged
+between the pinned checkpoints. Lead completed live probes and documentation.
+Final documentation-only commit/push is delegated to Singer in this workspace;
+unrelated untracked files and sibling Git state remain excluded.
 
 ## Closeout
 
-- Closed: not closed
-- Outcome: pending
+- Closed: 2026-09-26T07:00:17Z
+- Outcome: succeeded (dev deployment accepted with known validation limits)
 - Verified results: cold backup, runtime activation, index opening, 11 HTTP/API
   probes, authentication, blacklist actions, resumed indexing and helper recovery
-- Limitations: intermittent browser/API result delivery unresolved; no full
-  search-validation pass, overnight soak or fleet readiness claimed
-- Follow-up / successor: dev-builder lead
+- Limitations: detailed local latency cause and missing-slot JSON robustness
+  remain unproven; no full search-validation pass or fleet readiness claimed.
+  Overnight service continuity verified, not an exhaustive soak or rollback test.
+- Follow-up / successor: dev-builder lead for separately scoped performance/JSON
+  work if requested; retain protected complete backup
 - Reusable knowledge saved: source-sync, backup/storage and memory-diagnosis
   records in Vestige; current status remains here rather than in memory
